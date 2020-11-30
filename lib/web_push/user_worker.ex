@@ -7,7 +7,7 @@ defmodule Bonfire.Notifications.WebPush.UserWorker do
 
   import Ecto.Query
 
-  @repo Application.get_env(:bonfire_me, :repo_module)
+  @repo Application.get_env(:bonfire_notifications, :repo_module)
 
   alias Bonfire.Notifications.WebPush.Payload
   alias Bonfire.Notifications.WebPush.Schema

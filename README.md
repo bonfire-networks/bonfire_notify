@@ -30,7 +30,7 @@ A portion of this code (specifically the WebPush related modules) have been fork
 License: Apache 2.0 (http://www.apache.org/licenses/LICENSE-2.0.txt)
 Licensor: Level Technologies, LLC
 
-The Software is provided to you by the Licensor under the License, as defined below, subject to the following condition.
+The Software is provided to you by the Licensor under the License subject to the following condition.
 
 Without limiting other conditions in the License, the grant of rights under the License will not include, and the License does not grant to you, the right to Sell the Software.
 

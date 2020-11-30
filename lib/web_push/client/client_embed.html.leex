@@ -1,2 +1,1 @@
-    <meta name="web_push_public_key"
-        content="<%= Application.get_env(:web_push_encryption, :vapid_details)[:public_key] %>">
+<input id="web_push_public_key" value="<%= Application.get_env(:web_push_encryption, :vapid_details)[:public_key] %>" type="hidden">

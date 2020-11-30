@@ -7,7 +7,7 @@ defmodule Bonfire.Notifications.WebPush do
 
   import Ecto.Query
 
-  @repo Application.get_env(:bonfire_me, :repo_module)
+  @repo Application.get_env(:bonfire_notifications, :repo_module)
 
   alias Ecto.Changeset
   alias Bonfire.Notifications.WebPush.Payload

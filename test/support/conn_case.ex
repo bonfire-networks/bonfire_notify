@@ -15,6 +15,8 @@ defmodule Bonfire.Notifications.ConnCase do
   this option is not recommended for other databases.
   """
 
+  @repo Application.get_env(:bonfire_notifications, :repo_module)
+
   use ExUnit.CaseTemplate
 
   using do
@@ -35,8 +37,6 @@ defmodule Bonfire.Notifications.ConnCase do
   end
 
   setup tags do
-
-    @repo Application.get_env(:bonfire_me, :repo_module)
 
     :ok = Ecto.Adapters.SQL.Sandbox.checkout(@repo)
 
