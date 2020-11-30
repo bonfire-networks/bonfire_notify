@@ -112,7 +112,7 @@ defmodule Bonfire.Notifications.WebPush.SubscriptionWorker do
   defp delete_subscription(digest) do
     digest
     |> by_digest()
-    |> @@repo.delete_all()
+    |> @repo.delete_all()
     |> handle_delete()
   end
 
