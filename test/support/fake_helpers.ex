@@ -25,5 +25,17 @@ defmodule Bonfire.Notifications.Test.FakeHelpers do
     fake_user!(fake_account!(account_attrs), user_attrs)
   end
 
+  def valid_push_subscription_data(endpoint \\ "https://endpoint.test") do
+    """
+      {
+        "endpoint": "#{endpoint}",
+        "expirationTime": null,
+        "keys": {
+          "p256dh": "p256dh",
+          "auth": "auth"
+        }
+      }
+    """
+  end
 
 end

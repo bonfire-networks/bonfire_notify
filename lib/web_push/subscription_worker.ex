@@ -23,7 +23,11 @@ defmodule Bonfire.Notifications.WebPush.SubscriptionWorker do
   # Client
 
   def start_link([digest, subscription]) do
-    GenServer.start_link(__MODULE__, [digest, subscription], name: via_tuple(digest))
+    if Bonfire.Notifications.enabled() do
+      GenServer.start_link(__MODULE__, [digest, subscription], name: via_tuple(digest))
+    else
+      {:error, :not_enabled}
+    end
   end
 
   def registry_key(digest) do

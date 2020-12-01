@@ -17,6 +17,7 @@ defmodule Bonfire.Notifications.WebPush do
   alias Bonfire.Notifications.WebPush.UserSupervisor
   alias Bonfire.Notifications.WebPush.UserWorker
 
+
   @doc """
   Starts the process supervisor.
   """

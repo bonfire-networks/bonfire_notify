@@ -3,7 +3,7 @@ defmodule Bonfire.Notifications.Migration do
   import Pointers.Migration
 
 
-  def change do
+  def up do
     create table(:bonfire_web_push_subscriptions, primary_key: false) do
 
       add :id, :binary_id, primary_key: true
@@ -19,6 +19,39 @@ defmodule Bonfire.Notifications.Migration do
 
     create unique_index(:bonfire_web_push_subscriptions, [:user_id, :digest])
 
+
+    execute """
+    CREATE TYPE notification_event AS ENUM (
+      'CREATED',
+      'REPLIED',
+      'TEST',
+      'MESSAGE'
+    )
+    """
+
+
+    create table(:bonfire_notifications, primary_key: false) do
+      add :id, :binary_id, primary_key: true
+
+      # add :user_id, references(:users, on_delete: :nothing, type: :binary), null: false
+      add :user_id, :binary, null: false
+
+      add :topic, :text, null: false
+      add :state_dismissed, :boolean, null: false, default: false
+      add :event_type, :notification_event, null: false
+      add :data, :map
+
+      timestamps()
+    end
+  end
+
+  def down do
+    drop table(:bonfire_web_push_subscriptions)
+
+    drop table(:bonfire_notifications)
+
+    execute "DROP TYPE notification_event"
+    execute "DROP TYPE notification_state"
   end
 
 end

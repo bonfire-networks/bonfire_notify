@@ -12,6 +12,9 @@ Then set these env variables:
 WEB_PUSH_PUBLIC_KEY 	VAPID public key.
 WEB_PUSH_PRIVATE_KEY 	VAPID private key.
 
+## Sample usage
+
+See the tests.
 ## Handy commands
 
 ## Copyright and License
