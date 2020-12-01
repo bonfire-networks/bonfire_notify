@@ -16,13 +16,14 @@ defmodule Bonfire.Notifications.MixProject do
         {:phoenix_live_reload, "~> 1.2", only: :dev},
         {:dbg, "~> 1.0", only: [:dev, :test]},
         {:floki, ">= 0.0.0", only: [:dev, :test]},
+        {:mox, "~> 0.4.0", only: [:dev, :test]},
       ]
     ]
   end
 
   def application do
     [
-      # mod: {Bonfire.Notifications.FallbackApplication, []},
+      mod: {Bonfire.Notifications, []},
       extra_applications: [:logger, :runtime_tools]
     ]
   end

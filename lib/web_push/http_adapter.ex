@@ -9,6 +9,8 @@ defmodule Bonfire.Notifications.WebPush.HttpAdapter do
 
   @impl true
   def make_request(payload, subscription) do
+    IO.inspect(payload: payload)
+    IO.inspect(subscription: subscription)
     payload
     |> Payload.serialize()
     |> WebPushEncryption.send_web_push(subscription)

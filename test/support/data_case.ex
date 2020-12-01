@@ -25,6 +25,8 @@ defmodule Bonfire.Notifications.DataCase do
       import Ecto.Changeset
       import Ecto.Query
       import Bonfire.Notifications.DataCase
+      import Bonfire.Notifications.Test.FakeHelpers
+
     end
   end
 

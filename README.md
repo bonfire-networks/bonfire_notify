@@ -4,6 +4,14 @@ An extension for [Bonfire](https://bonfire.cafe/) that handles:
 
 - Web push notifications
 
+## Configuration
+
+For Web Push, you need to generate keys: `mix web_push.gen.keypair`
+
+Then set these env variables:
+WEB_PUSH_PUBLIC_KEY 	VAPID public key.
+WEB_PUSH_PRIVATE_KEY 	VAPID private key.
+
 ## Handy commands
 
 ## Copyright and License

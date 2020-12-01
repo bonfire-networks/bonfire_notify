@@ -1,3 +1,5 @@
 bonfire_common = "https://github.com/bonfire-ecosystem/bonfire_common#main"
 # bonfire_web_phoenix = "https://github.com/commonspub/bonfire_web_phoenix#main"
+bonfire_data_identity="https://github.com/bonfire-ecosystem/bonfire_data_identity#main"
+bonfire_me = "https://github.com/bonfire-ecosystem/bonfire_me#main"
 pointers = "https://github.com/commonspub/pointers#main"

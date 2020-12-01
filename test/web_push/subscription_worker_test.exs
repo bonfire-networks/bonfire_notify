@@ -11,6 +11,8 @@ defmodule Bonfire.Notifications.WebPush.SubscriptionWorkerTest do
   alias Bonfire.Notifications.WebPush.Payload
   alias Bonfire.Notifications.WebPush.SubscriptionWorker
 
+  import Bonfire.Notifications.Test.FakeHelpers
+
   @valid_data """
     {
       "endpoint": "https://endpoint.test",
@@ -25,7 +27,7 @@ defmodule Bonfire.Notifications.WebPush.SubscriptionWorkerTest do
   setup :verify_on_exit!
 
   setup do
-    {:ok, user} = create_user()
+    user = fake_user!()
     {:ok, sub_data} = WebPush.subscribe(user.id, @valid_data)
     {:ok, worker_pid} = SubscriptionWorker.start_link([sub_data.digest, sub_data.subscription])
 
@@ -43,7 +45,7 @@ defmodule Bonfire.Notifications.WebPush.SubscriptionWorkerTest do
            subscription: subscription,
            worker_pid: worker_pid
          } do
-      payload = %Payload{title: "Level", body: "Hello"}
+      payload = %Payload{title: "Bonfire", body: "Hello"}
       expect_response(201, payload, subscription)
       assert :ok == SubscriptionWorker.send_web_push(digest, payload)
 
@@ -58,7 +60,7 @@ defmodule Bonfire.Notifications.WebPush.SubscriptionWorkerTest do
            subscription: subscription,
            worker_pid: worker_pid
          } do
-      payload = %Payload{title: "Level", body: "Hello"}
+      payload = %Payload{title: "Bonfire", body: "Hello"}
       expect_response(404, payload, subscription)
       assert :ok == SubscriptionWorker.send_web_push(digest, payload)
 
@@ -75,7 +77,7 @@ defmodule Bonfire.Notifications.WebPush.SubscriptionWorkerTest do
            subscription: subscription,
            worker_pid: worker_pid
          } do
-      payload = %Payload{title: "Level", body: "Hello"}
+      payload = %Payload{title: "Bonfire", body: "Hello"}
       expect_response(410, payload, subscription)
       assert :ok == SubscriptionWorker.send_web_push(digest, payload)
 
@@ -91,7 +93,7 @@ defmodule Bonfire.Notifications.WebPush.SubscriptionWorkerTest do
            subscription: subscription,
            worker_pid: worker_pid
          } do
-      payload = %Payload{title: "Level", body: "Hello"}
+      payload = %Payload{title: "Bonfire", body: "Hello"}
       expect_response(500, payload, subscription)
       expect_response(201, payload, subscription)
       assert :ok == SubscriptionWorker.send_web_push(digest, payload)
@@ -105,7 +107,7 @@ defmodule Bonfire.Notifications.WebPush.SubscriptionWorkerTest do
            digest: digest,
            subscription: subscription
          } do
-      payload = %Payload{title: "Level", body: "Hello"}
+      payload = %Payload{title: "Bonfire", body: "Hello"}
       expect_response(500, payload, subscription, max_attempts())
       assert :ok == SubscriptionWorker.send_web_push(digest, payload)
 
@@ -128,6 +130,6 @@ defmodule Bonfire.Notifications.WebPush.SubscriptionWorkerTest do
   end
 
   defp max_attempts do
-    Application.get_env(:level, Bonfire.Notifications.WebPush)[:max_attempts]
+    Application.get_env(:bonfire_notifications, Bonfire.Notifications.WebPush)[:max_attempts]
   end
 end

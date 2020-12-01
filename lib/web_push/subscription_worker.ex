@@ -56,6 +56,8 @@ defmodule Bonfire.Notifications.WebPush.SubscriptionWorker do
   end
 
   defp make_request(state, payload, attempts) do
+    IO.inspect(state: state)
+    IO.inspect(payload: payload)
     payload
     |> adapter().make_request(state.subscription)
     |> handle_push_response(state, payload, attempts)
@@ -125,7 +127,10 @@ defmodule Bonfire.Notifications.WebPush.SubscriptionWorker do
   # Internal
 
   defp adapter do
-    Application.get_env(:bonfire_notifications, Bonfire.Notifications.WebPush)[:adapter]
+    default = Bonfire.Notifications.WebPush.HttpAdapter
+    IO.inspect(vapid_keys: Application.get_env(:web_push_encryption, :vapid_details))
+    adapter = Application.get_env(:bonfire_notifications, Bonfire.Notifications.WebPush)[:adapter] || default
+    IO.inspect adapter
   end
 
   defp retry_timeout do
