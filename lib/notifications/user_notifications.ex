@@ -5,7 +5,7 @@ defmodule Bonfire.Notifications.UserNotifications do
 
   import Ecto.Query
 
-  @repo Application.get_env(:bonfire_notifications, :repo_module)
+  @repo Bonfire.Common.Config.get_ext(:bonfire_notifications, :repo_module)
 
   # import Bonfire.Notifications.Gettext
 
@@ -35,7 +35,7 @@ defmodule Bonfire.Notifications.UserNotifications do
   def list(%User{} = user, %{} = activity) do
     user
     |> query(activity)
-    |> @repo.all()
+    |> repo().all()
   end
 
   @doc """
@@ -45,7 +45,7 @@ defmodule Bonfire.Notifications.UserNotifications do
   def get_notification(%User{} = user, id) do
     user
     |> query()
-    |> @repo.get(id)
+    |> repo().get(id)
     |> after_get_notification()
   end
 
@@ -81,7 +81,7 @@ defmodule Bonfire.Notifications.UserNotifications do
 
     %Notification{}
     |> Ecto.Changeset.change(params)
-    |> @repo.insert()
+    |> repo().insert()
   end
 
   defp after_record({:ok, notification}, user) do
@@ -102,7 +102,7 @@ defmodule Bonfire.Notifications.UserNotifications do
     |> query()
     |> with_topic(topic)
     |> where([n], state_dismissed: false)
-    |> @repo.update_all(set: [state_dismissed: true, updated_at: now])
+    |> repo().update_all(set: [state_dismissed: true, updated_at: now])
     |> after_dismiss_topic(user, topic)
   end
 
@@ -122,7 +122,7 @@ defmodule Bonfire.Notifications.UserNotifications do
   def dismiss_notification(%User{} = user, %Notification{} = notification) do
     notification
     |> Ecto.Changeset.change(state_dismissed: true)
-    |> @repo.update()
+    |> repo().update()
     |> after_dismiss_notification(user)
   end
 

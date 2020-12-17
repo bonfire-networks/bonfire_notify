@@ -5,7 +5,7 @@ defmodule Bonfire.Notifications.WebPush.SubscriptionWorkerTest do
 
   alias Ecto.Adapters.SQL.Sandbox
 
-  @repo Application.get_env(:bonfire_notifications, :repo_module)
+  @repo Bonfire.Common.Config.get_ext(:bonfire_notifications, :repo_module)
 
   alias Bonfire.Notifications.WebPush
   alias Bonfire.Notifications.WebPush.Payload
@@ -130,6 +130,6 @@ defmodule Bonfire.Notifications.WebPush.SubscriptionWorkerTest do
   end
 
   defp max_attempts do
-    Application.get_env(:bonfire_notifications, Bonfire.Notifications.WebPush)[:max_attempts]
+    Bonfire.Common.Config.get_ext(:bonfire_notifications, Bonfire.Notifications.WebPush)[:max_attempts]
   end
 end

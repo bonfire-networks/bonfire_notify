@@ -14,7 +14,7 @@ defmodule Bonfire.Notifications.DataCase do
   this option is not recommended for other databases.
   """
 
-  @repo Application.get_env(:bonfire_notifications, :repo_module)
+  @repo Bonfire.Common.Config.get_ext(:bonfire_notifications, :repo_module)
 
   use ExUnit.CaseTemplate
 
@@ -32,7 +32,7 @@ defmodule Bonfire.Notifications.DataCase do
 
   setup tags do
 
-    :ok = Ecto.Adapters.SQL.Sandbox.checkout(@repo)
+    :ok = Ecto.Adapters.SQL.Sandbox.checkout(repo())
 
     unless tags[:async] do
       Ecto.Adapters.SQL.Sandbox.mode(@repo, {:shared, self()})

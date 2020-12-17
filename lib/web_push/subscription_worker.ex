@@ -7,7 +7,7 @@ defmodule Bonfire.Notifications.WebPush.SubscriptionWorker do
   require Logger
   import Ecto.Query
 
-  @repo Application.get_env(:bonfire_notifications, :repo_module)
+  @repo Bonfire.Common.Config.get_ext(:bonfire_notifications, :repo_module)
 
   alias Bonfire.Notifications.WebPush.Payload
   alias Bonfire.Notifications.WebPush.Schema
@@ -118,7 +118,7 @@ defmodule Bonfire.Notifications.WebPush.SubscriptionWorker do
   defp delete_subscription(digest) do
     digest
     |> by_digest()
-    |> @repo.delete_all()
+    |> repo().delete_all()
     |> handle_delete()
   end
 
@@ -133,15 +133,15 @@ defmodule Bonfire.Notifications.WebPush.SubscriptionWorker do
   defp adapter do
     default = Bonfire.Notifications.WebPush.HttpAdapter
     IO.inspect(vapid_keys: Application.get_env(:web_push_encryption, :vapid_details))
-    adapter = Application.get_env(:bonfire_notifications, Bonfire.Notifications.WebPush)[:adapter] || default
+    adapter = Bonfire.Common.Config.get_ext(:bonfire_notifications, Bonfire.Notifications.WebPush)[:adapter] || default
     IO.inspect adapter
   end
 
   defp retry_timeout do
-    Application.get_env(:bonfire_notifications, Bonfire.Notifications.WebPush)[:retry_timeout]
+    Bonfire.Common.Config.get_ext(:bonfire_notifications, Bonfire.Notifications.WebPush)[:retry_timeout]
   end
 
   defp max_attempts do
-    Application.get_env(:bonfire_notifications, Bonfire.Notifications.WebPush)[:max_attempts]
+    Bonfire.Common.Config.get_ext(:bonfire_notifications, Bonfire.Notifications.WebPush)[:max_attempts]
   end
 end

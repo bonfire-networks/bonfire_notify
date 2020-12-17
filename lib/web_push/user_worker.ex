@@ -7,7 +7,7 @@ defmodule Bonfire.Notifications.WebPush.UserWorker do
 
   import Ecto.Query
 
-  @repo Application.get_env(:bonfire_notifications, :repo_module)
+  @repo Bonfire.Common.Config.get_ext(:bonfire_notifications, :repo_module)
 
   alias Bonfire.Notifications.WebPush.Payload
   alias Bonfire.Notifications.WebPush.Schema
@@ -62,7 +62,7 @@ defmodule Bonfire.Notifications.WebPush.UserWorker do
   defp fetch_subscriptions(user_id) do
     user_id
     |> build_query()
-    |> @repo.all()
+    |> repo().all()
     |> parse_records()
   end
 

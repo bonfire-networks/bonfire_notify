@@ -7,7 +7,7 @@ defmodule Bonfire.Notifications.WebPush do
 
   import Ecto.Query
 
-  @repo Application.get_env(:bonfire_notifications, :repo_module)
+  @repo Bonfire.Common.Config.get_ext(:bonfire_notifications, :repo_module)
 
   alias Ecto.Changeset
   alias Bonfire.Notifications.WebPush.Payload
@@ -58,7 +58,7 @@ defmodule Bonfire.Notifications.WebPush do
       %Schema{}
       |> Changeset.change(%{user_id: user_id, data: data})
       |> Changeset.change(%{digest: compute_digest(data)})
-      |> @repo.insert(on_conflict: :nothing)
+      |> repo().insert(on_conflict: :nothing)
 
     {result, subscription}
   end
@@ -86,7 +86,7 @@ defmodule Bonfire.Notifications.WebPush do
   def get_subscriptions(user_ids) do
     user_ids
     |> build_query()
-    |> @repo.all()
+    |> repo().all()
     |> parse_records()
   end
 
