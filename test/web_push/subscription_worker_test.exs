@@ -5,7 +5,7 @@ defmodule Bonfire.Notifications.WebPush.SubscriptionWorkerTest do
 
   alias Ecto.Adapters.SQL.Sandbox
 
-  @repo Bonfire.Common.Config.get_ext(:bonfire_notifications, :repo_module)
+  import Bonfire.Common.Config, only: [repo: 0]
 
   alias Bonfire.Notifications.WebPush
   alias Bonfire.Notifications.WebPush.Payload
@@ -33,7 +33,7 @@ defmodule Bonfire.Notifications.WebPush.SubscriptionWorkerTest do
 
     # Explicitly allow the worker access to the mock adapter and repo
     Mox.allow(Bonfire.Notifications.WebPush.TestAdapter, self(), worker_pid)
-    Sandbox.allow(@repo, self(), worker_pid)
+    Sandbox.allow(repo(), self(), worker_pid)
 
     {:ok, Map.merge(sub_data, %{user: user, worker_pid: worker_pid})}
   end

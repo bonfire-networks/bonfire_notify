@@ -7,7 +7,7 @@ defmodule Bonfire.Notifications.WebPush.UserWorker do
 
   import Ecto.Query
 
-  @repo Bonfire.Common.Config.get_ext(:bonfire_notifications, :repo_module)
+  import Bonfire.Common.Config, only: [repo: 0]
 
   alias Bonfire.Notifications.WebPush.Payload
   alias Bonfire.Notifications.WebPush.Schema

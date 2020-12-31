@@ -1,7 +1,5 @@
 use Mix.Config
 
-config :bonfire_notifications, :repo_module, YourRepoModule
-
 # Web push
 config :bonfire_notifications, Bonfire.Notifications.WebPush,
   adapter: Bonfire.Notifications.WebPush.HttpAdapter,

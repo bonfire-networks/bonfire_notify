@@ -6,7 +6,7 @@ defmodule Bonfire.Notifications.Test.FakeHelpers do
 
   import ExUnit.Assertions
 
-  @repo Bonfire.Common.Config.get_ext(:bonfire_notifications, :repo_module)
+  import Bonfire.Common.Config, only: [repo: 0]
 
   def fake_account!(attrs \\ %{}) do
     cs = Accounts.signup_changeset(Fake.account(attrs))

@@ -14,7 +14,7 @@ defmodule Bonfire.Notifications.ChannelCase do
   by setting `use MyApp.Web.ChannelCase, async: true`, although
   this option is not recommended for other databases.
   """
-  @repo Bonfire.Common.Config.get_ext(:bonfire_notifications, :repo_module)
+  import Bonfire.Common.Config, only: [repo: 0]
 
   use ExUnit.CaseTemplate
 
@@ -34,7 +34,7 @@ defmodule Bonfire.Notifications.ChannelCase do
     :ok = Ecto.Adapters.SQL.Sandbox.checkout(repo())
 
     unless tags[:async] do
-      Ecto.Adapters.SQL.Sandbox.mode(@repo, {:shared, self()})
+      Ecto.Adapters.SQL.Sandbox.mode(repo(), {:shared, self()})
     end
 
     :ok
