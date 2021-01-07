@@ -25,7 +25,7 @@ defmodule Bonfire.Notifications.ChannelCase do
       import Bonfire.Notifications.ChannelCase
 
       # The default endpoint for testing
-      @endpoint Bonfire.Notifications.Web.Endpoint
+      @endpoint Bonfire.Common.Config.get!(:endpoint_module)
     end
   end
 

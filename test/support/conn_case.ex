@@ -32,7 +32,7 @@ defmodule Bonfire.Notifications.ConnCase do
       alias Bonfire.Notifications.Web.Router.Helpers, as: Routes
 
       # The default endpoint for testing
-      @endpoint Bonfire.Notifications.Web.Endpoint
+      @endpoint Bonfire.Common.Config.get!(:endpoint_module)
     end
   end
 
