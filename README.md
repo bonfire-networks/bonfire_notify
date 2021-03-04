@@ -1,8 +1,9 @@
-# Bonfire:Notifications
+# Bonfire:Notify
 
 An extension for [Bonfire](https://bonfire.cafe/) that handles:
 
-- Web push notifications
+- Records user notifications
+- Sends web push notifications
 
 ## Configuration
 
