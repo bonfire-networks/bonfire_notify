@@ -1,11 +1,11 @@
-defmodule Bonfire.Notifications.WebPush.HttpAdapter do
+defmodule Bonfire.Notify.WebPush.HttpAdapter do
   @moduledoc """
   The HTTP client for sending real web pushes.
   """
 
-  alias Bonfire.Notifications.WebPush.Payload
+  alias Bonfire.Notify.WebPush.Payload
 
-  @behaviour Bonfire.Notifications.WebPush.Adapter
+  @behaviour Bonfire.Notify.WebPush.Adapter
 
   @impl true
   def make_request(payload, subscription) do

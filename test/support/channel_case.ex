@@ -1,4 +1,4 @@
-defmodule Bonfire.Notifications.ChannelCase do
+defmodule Bonfire.Notify.ChannelCase do
   @moduledoc """
   This module defines the test case to be used by
   channel tests.
@@ -22,7 +22,7 @@ defmodule Bonfire.Notifications.ChannelCase do
     quote do
       # Import conveniences for testing with channels
       import Phoenix.ChannelTest
-      import Bonfire.Notifications.ChannelCase
+      import Bonfire.Notify.ChannelCase
 
       # The default endpoint for testing
       @endpoint Bonfire.Common.Config.get!(:endpoint_module)

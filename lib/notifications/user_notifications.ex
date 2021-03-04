@@ -1,4 +1,4 @@
-defmodule Bonfire.Notifications.UserNotifications do
+defmodule Bonfire.Notify.UserNotifications do
   @moduledoc """
   The Notifications context.
   """
@@ -7,11 +7,11 @@ defmodule Bonfire.Notifications.UserNotifications do
 
   import Bonfire.Common.Config, only: [repo: 0]
 
-  # import Bonfire.Notifications.Gettext
+  # import Bonfire.Notify.Gettext
 
-  alias Bonfire.Notifications.Events
-  alias Bonfire.Notifications.Repo
-  alias Bonfire.Notifications.Notification
+  alias Bonfire.Notify.Events
+  alias Bonfire.Notify.Repo
+  alias Bonfire.Notify.Notification
   alias Bonfire.Data.Identity.User
 
   @doc """

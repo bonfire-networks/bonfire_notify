@@ -1,1 +1,1 @@
-Mox.defmock(Bonfire.Notifications.WebPush.TestAdapter, for: Bonfire.Notifications.WebPush.Adapter)
+Mox.defmock(Bonfire.Notify.WebPush.TestAdapter, for: Bonfire.Notify.WebPush.Adapter)

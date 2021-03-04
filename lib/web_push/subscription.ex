@@ -1,4 +1,4 @@
-defmodule Bonfire.Notifications.WebPush.Subscription do
+defmodule Bonfire.Notify.WebPush.Subscription do
   @moduledoc """
   Represents a web push subscription.
   """

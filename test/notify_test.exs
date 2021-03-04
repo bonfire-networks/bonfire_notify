@@ -1,13 +1,13 @@
-defmodule Bonfire.Notifications.PostsTest do
-  use Bonfire.Notifications.DataCase, async: true
+defmodule Bonfire.Notify.PostsTest do
+  use Bonfire.Notify.DataCase, async: true
 
   import Ecto.Query
 
   alias Ecto.Changeset
-  alias Bonfire.Notifications.UserNotifications
-  alias Bonfire.Notifications.Notification
+  alias Bonfire.Notify.UserNotifications
+  alias Bonfire.Notify.Notification
 
-  alias Bonfire.Notifications.Schemas.User
+  alias Bonfire.Notify.Schemas.User
 
   describe "notify" do
 
@@ -19,7 +19,7 @@ defmodule Bonfire.Notifications.PostsTest do
       object = %{name: "You there?", summary: "Nice to meet you", creator: creator}
 
 
-      Bonfire.Notifications.Notify.notify(object, notify_user)
+      Bonfire.Notify.Notify.notify(object, notify_user)
 
 
       assert [%Notification{event_type: "REPLY_CREATED"}] = UserNotifications.list(notify_user, object)

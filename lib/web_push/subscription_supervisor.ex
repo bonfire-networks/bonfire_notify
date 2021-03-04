@@ -1,11 +1,11 @@
-defmodule Bonfire.Notifications.WebPush.SubscriptionSupervisor do
+defmodule Bonfire.Notify.WebPush.SubscriptionSupervisor do
   @moduledoc """
   The supervisor for subscription processes.
   """
 
   use DynamicSupervisor
 
-  alias Bonfire.Notifications.WebPush.SubscriptionWorker
+  alias Bonfire.Notify.WebPush.SubscriptionWorker
 
   # Client
 

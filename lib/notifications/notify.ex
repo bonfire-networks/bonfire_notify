@@ -1,12 +1,12 @@
-defmodule Bonfire.Notifications.Notify do
+defmodule Bonfire.Notify.Notify do
   @moduledoc """
   Responsible for sending notifications
 
   TODO: refactor based on how we use it
   """
 
-  alias Bonfire.Notifications.UserNotifications
-  alias Bonfire.Notifications.WebPush
+  alias Bonfire.Notify.UserNotifications
+  alias Bonfire.Notify.WebPush
 
   alias Bonfire.Data.Identity.User
 

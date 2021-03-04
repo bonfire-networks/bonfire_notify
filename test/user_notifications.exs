@@ -1,8 +1,8 @@
-defmodule Bonfire.Notifications.UserNotificationsTest do
-  use Bonfire.Notifications.DataCase, async: true
+defmodule Bonfire.Notify.UserNotificationsTest do
+  use Bonfire.Notify.DataCase, async: true
 
-  alias Bonfire.Notifications.UserNotifications
-  alias Bonfire.Notifications.Notification
+  alias Bonfire.Notify.UserNotifications
+  alias Bonfire.Notify.Notification
 
 
   describe "record_reply_created/2" do

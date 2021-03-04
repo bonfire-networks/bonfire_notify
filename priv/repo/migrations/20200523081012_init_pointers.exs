@@ -1,4 +1,4 @@
-defmodule Bonfire.Notifications.Repo.Migrations.InitPointers do
+defmodule Bonfire.Notify.Repo.Migrations.InitPointers do
   use Ecto.Migration
   import Pointers.Migration
   import Pointers.ULID.Migration

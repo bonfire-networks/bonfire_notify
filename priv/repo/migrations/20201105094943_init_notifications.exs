@@ -1,8 +1,8 @@
-defmodule Bonfire.Notifications.Repo.Migrations.Init do
+defmodule Bonfire.Notify.Repo.Migrations.Init do
   use Ecto.Migration
 
   def change do
-   Bonfire.Notifications.Migrations.change()
+   Bonfire.Notify.Migrations.change()
   end
 
 end

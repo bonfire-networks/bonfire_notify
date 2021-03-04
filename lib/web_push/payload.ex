@@ -1,4 +1,4 @@
-defmodule Bonfire.Notifications.WebPush.Payload do
+defmodule Bonfire.Notify.WebPush.Payload do
   @moduledoc """
   Represents a web push payload.
   """

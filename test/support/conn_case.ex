@@ -1,4 +1,4 @@
-defmodule Bonfire.Notifications.ConnCase do
+defmodule Bonfire.Notify.ConnCase do
   @moduledoc """
   This module defines the test case to be used by
   tests that require setting up a connection.
@@ -25,11 +25,11 @@ defmodule Bonfire.Notifications.ConnCase do
       import Plug.Conn
       import Phoenix.ConnTest
       import Phoenix.LiveViewTest
-      import Bonfire.Notifications.ConnCase
-      import Bonfire.Notifications.Test.ConnHelpers
-      import Bonfire.Notifications.Test.FakeHelpers
-      alias Bonfire.Notifications.Fake
-      alias Bonfire.Notifications.Web.Router.Helpers, as: Routes
+      import Bonfire.Notify.ConnCase
+      import Bonfire.Notify.Test.ConnHelpers
+      import Bonfire.Notify.Test.FakeHelpers
+      alias Bonfire.Notify.Fake
+      alias Bonfire.Notify.Web.Router.Helpers, as: Routes
 
       # The default endpoint for testing
       @endpoint Bonfire.Common.Config.get!(:endpoint_module)

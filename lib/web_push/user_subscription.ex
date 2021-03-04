@@ -1,4 +1,4 @@
-defmodule Bonfire.Notifications.WebPush.Schema do
+defmodule Bonfire.Notify.WebPush.UserSubscription do
   @moduledoc """
   The subscription schema.
   """
@@ -9,7 +9,7 @@ defmodule Bonfire.Notifications.WebPush.Schema do
   @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary_id
 
-  schema "bonfire_web_push_subscriptions" do
+  schema "bonfire_web_push_subscription" do
     field :user_id, :binary
     field :digest, :string
     field :data, :string

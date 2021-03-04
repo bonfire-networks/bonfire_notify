@@ -1,10 +1,10 @@
-defmodule Bonfire.Notifications.Migration do
+defmodule Bonfire.Notify.Migration do
   use Ecto.Migration
   import Pointers.Migration
 
 
   def up do
-    create table(:bonfire_web_push_subscriptions, primary_key: false) do
+    create table(:bonfire_web_push_subscription, primary_key: false) do
 
       add :id, :binary_id, primary_key: true
 
@@ -17,7 +17,7 @@ defmodule Bonfire.Notifications.Migration do
       timestamps()
     end
 
-    create unique_index(:bonfire_web_push_subscriptions, [:user_id, :digest])
+    create unique_index(:bonfire_web_push_subscription, [:user_id, :digest])
 
 
     execute """
@@ -30,7 +30,7 @@ defmodule Bonfire.Notifications.Migration do
     """
 
 
-    create table(:bonfire_notifications, primary_key: false) do
+    create table(:bonfire_notify, primary_key: false) do
       add :id, :binary_id, primary_key: true
 
       # add :user_id, references(:users, on_delete: :nothing, type: :binary), null: false
@@ -46,9 +46,9 @@ defmodule Bonfire.Notifications.Migration do
   end
 
   def down do
-    drop table(:bonfire_web_push_subscriptions)
+    drop table(:bonfire_web_push_subscription)
 
-    drop table(:bonfire_notifications)
+    drop table(:bonfire_notify)
 
     execute "DROP TYPE notification_event"
     execute "DROP TYPE notification_state"

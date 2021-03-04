@@ -1,8 +1,8 @@
 use Mix.Config
 
 # Web push
-config :bonfire_notifications, Bonfire.Notifications.WebPush,
-  adapter: Bonfire.Notifications.WebPush.HttpAdapter,
+config :bonfire_notify, Bonfire.Notify.WebPush,
+  adapter: Bonfire.Notify.WebPush.HttpAdapter,
   retry_timeout: 1000,
   max_attempts: 5
 

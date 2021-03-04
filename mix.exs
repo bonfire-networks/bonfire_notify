@@ -1,11 +1,11 @@
 Code.eval_file("mess.exs")
-defmodule Bonfire.Notifications.MixProject do
+defmodule Bonfire.Notify.MixProject do
 
   use Mix.Project
 
   def project do
     [
-      app: :bonfire_notifications,
+      app: :bonfire_notify,
       version: "0.1.0",
       elixir: "~> 1.11",
       elixirc_paths: elixirc_paths(Mix.env()),
@@ -23,7 +23,7 @@ defmodule Bonfire.Notifications.MixProject do
 
   def application do
     [
-      mod: {Bonfire.Notifications, []},
+      mod: {Bonfire.Notify, []},
       extra_applications: [:logger, :runtime_tools]
     ]
   end

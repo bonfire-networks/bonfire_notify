@@ -1,4 +1,4 @@
-defmodule Bonfire.Notifications do
+defmodule Bonfire.Notify do
   @moduledoc false
 
   use Application
@@ -8,11 +8,11 @@ defmodule Bonfire.Notifications do
     if enabled() do
 
       children = [
-        {Registry, keys: :unique, name: Bonfire.Notifications.Registry},
-        Bonfire.Notifications.WebPush
+        {Registry, keys: :unique, name: Bonfire.Notify.Registry},
+        Bonfire.Notify.WebPush
       ]
 
-      opts = [strategy: :one_for_one, name: Bonfire.Notifications.Supervisor]
+      opts = [strategy: :one_for_one, name: Bonfire.Notify.Supervisor]
       Supervisor.start_link(children, opts)
 
     else

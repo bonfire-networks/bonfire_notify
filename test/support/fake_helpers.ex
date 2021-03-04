@@ -1,4 +1,4 @@
-defmodule Bonfire.Notifications.Test.FakeHelpers do
+defmodule Bonfire.Notify.Test.FakeHelpers do
 
   alias Bonfire.Data.Identity.Account
   alias Bonfire.Me.Fake

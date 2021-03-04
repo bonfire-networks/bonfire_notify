@@ -1,10 +1,10 @@
-defmodule Bonfire.Notifications.WebPush.Adapter do
+defmodule Bonfire.Notify.WebPush.Adapter do
   @moduledoc """
   The behaviour for web push adapters.
   """
 
-  alias Bonfire.Notifications.WebPush.Payload
-  alias Bonfire.Notifications.WebPush.Subscription
+  alias Bonfire.Notify.WebPush.Payload
+  alias Bonfire.Notify.WebPush.Subscription
 
   @doc """
   Sends a web push request to the subscription.

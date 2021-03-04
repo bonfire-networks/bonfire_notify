@@ -1,6 +1,6 @@
-defmodule Bonfire.Notifications.DataHelpers do
+defmodule Bonfire.Notify.DataHelpers do
 
   # import ExUnit.Assertions
-  # alias Bonfire.Notifications.Fake
+  # alias Bonfire.Notify.Fake
 
 end

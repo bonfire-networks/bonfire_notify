@@ -1,9 +1,9 @@
-defmodule Bonfire.Notifications.UsersTest do
-  use Bonfire.Notifications.DataCase, async: true
+defmodule Bonfire.Notify.UsersTest do
+  use Bonfire.Notify.DataCase, async: true
 
-  alias Bonfire.Notifications.Schemas.User
-  alias Bonfire.Notifications.Users
-  alias Bonfire.Notifications.WebPush.Subscription
+  alias Bonfire.Notify.Schemas.User
+  alias Bonfire.Notify.Users
+  alias Bonfire.Notify.WebPush.Subscription
 
   describe "create_push_subscription/2" do
     setup do

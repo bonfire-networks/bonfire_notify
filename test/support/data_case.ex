@@ -1,4 +1,4 @@
-defmodule Bonfire.Notifications.DataCase do
+defmodule Bonfire.Notify.DataCase do
   @moduledoc """
   This module defines the setup for tests requiring
   access to the application's data layer.
@@ -10,7 +10,7 @@ defmodule Bonfire.Notifications.DataCase do
   we enable the SQL sandbox, so changes done to the database
   are reverted at the end of every test. If you are using
   PostgreSQL, you can even run database tests asynchronously
-  by setting `use Bonfire.Notifications.DataCase, async: true`, although
+  by setting `use Bonfire.Notify.DataCase, async: true`, although
   this option is not recommended for other databases.
   """
 
@@ -24,8 +24,8 @@ defmodule Bonfire.Notifications.DataCase do
       import Ecto
       import Ecto.Changeset
       import Ecto.Query
-      import Bonfire.Notifications.DataCase
-      import Bonfire.Notifications.Test.FakeHelpers
+      import Bonfire.Notify.DataCase
+      import Bonfire.Notify.Test.FakeHelpers
 
     end
   end

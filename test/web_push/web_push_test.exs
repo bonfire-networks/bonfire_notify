@@ -1,8 +1,8 @@
-defmodule Bonfire.Notifications.WebPushTest do
-  use Bonfire.Notifications.DataCase, async: true
+defmodule Bonfire.Notify.WebPushTest do
+  use Bonfire.Notify.DataCase, async: true
 
-  alias Bonfire.Notifications.WebPush
-  alias Bonfire.Notifications.WebPush.Subscription
+  alias Bonfire.Notify.WebPush
+  alias Bonfire.Notify.WebPush.Subscription
 
   @valid_data """
     {

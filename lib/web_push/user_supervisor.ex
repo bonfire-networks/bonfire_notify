@@ -1,11 +1,11 @@
-defmodule Bonfire.Notifications.WebPush.UserSupervisor do
+defmodule Bonfire.Notify.WebPush.UserSupervisor do
   @moduledoc """
   The supervisor for user processes.
   """
 
   use DynamicSupervisor
 
-  alias Bonfire.Notifications.WebPush.UserWorker
+  alias Bonfire.Notify.WebPush.UserWorker
 
   # Client
 

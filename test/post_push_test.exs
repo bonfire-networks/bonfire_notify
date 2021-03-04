@@ -1,4 +1,4 @@
 
-defmodule Bonfire.Notifications.Posts.CreateReply do
+defmodule Bonfire.Notify.Posts.CreateReply do
 
   end

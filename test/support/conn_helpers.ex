@@ -1,4 +1,4 @@
-defmodule Bonfire.Notifications.Test.ConnHelpers do
+defmodule Bonfire.Notify.Test.ConnHelpers do
 
   import ExUnit.Assertions
   import Plug.Conn

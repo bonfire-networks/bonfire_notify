@@ -1,6 +1,6 @@
-defmodule Bonfire.Notifications.UserSubscriptions do
+defmodule Bonfire.Notify.UserSubscriptions do
 
-  alias Bonfire.Notifications.WebPush
+  alias Bonfire.Notify.WebPush
 
   alias Bonfire.Data.Identity.User
 

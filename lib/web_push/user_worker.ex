@@ -1,4 +1,4 @@
-defmodule Bonfire.Notifications.WebPush.UserWorker do
+defmodule Bonfire.Notify.WebPush.UserWorker do
   @moduledoc """
   A server process representing a user.
   """
@@ -9,11 +9,11 @@ defmodule Bonfire.Notifications.WebPush.UserWorker do
 
   import Bonfire.Common.Config, only: [repo: 0]
 
-  alias Bonfire.Notifications.WebPush.Payload
-  alias Bonfire.Notifications.WebPush.Schema
-  alias Bonfire.Notifications.WebPush.Subscription
-  alias Bonfire.Notifications.WebPush.SubscriptionSupervisor
-  alias Bonfire.Notifications.WebPush.SubscriptionWorker
+  alias Bonfire.Notify.WebPush.Payload
+  alias Bonfire.Notify.WebPush.UserSubscription
+  alias Bonfire.Notify.WebPush.Subscription
+  alias Bonfire.Notify.WebPush.SubscriptionSupervisor
+  alias Bonfire.Notify.WebPush.SubscriptionWorker
 
   defstruct [:user_id]
 
@@ -32,7 +32,7 @@ defmodule Bonfire.Notifications.WebPush.UserWorker do
   end
 
   defp via_tuple(user_id) do
-    {:via, Registry, {Bonfire.Notifications.Registry, registry_key(user_id)}}
+    {:via, Registry, {Bonfire.Notify.Registry, registry_key(user_id)}}
   end
 
   def send_web_push(user_id, %Payload{} = payload) do

@@ -1,4 +1,4 @@
-defmodule Bonfire.Notifications.WebPush.ClientEmbed do
+defmodule Bonfire.Notify.WebPush.ClientEmbed do
   use Bonfire.Web, :live_component
 
 

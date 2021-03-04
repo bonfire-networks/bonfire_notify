@@ -1,4 +1,4 @@
-defmodule Bonfire.Notifications.Notification do
+defmodule Bonfire.Notify.Notification do
   @moduledoc """
   The Notification schema.
   """
@@ -10,7 +10,7 @@ defmodule Bonfire.Notifications.Notification do
   @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary
 
-  schema "bonfire_notifications" do
+  schema "bonfire_notify" do
     field :state_dismissed, :boolean, read_after_writes: true
     field :topic, :string
     field :event_type, :string

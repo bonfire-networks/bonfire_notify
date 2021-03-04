@@ -1,5 +1,5 @@
-defmodule Bonfire.Notifications.WebPush.SubscriptionWorkerTest do
-  use Bonfire.Notifications.DataCase, async: true
+defmodule Bonfire.Notify.WebPush.SubscriptionWorkerTest do
+  use Bonfire.Notify.DataCase, async: true
 
   import Mox
 
@@ -7,11 +7,11 @@ defmodule Bonfire.Notifications.WebPush.SubscriptionWorkerTest do
 
   import Bonfire.Common.Config, only: [repo: 0]
 
-  alias Bonfire.Notifications.WebPush
-  alias Bonfire.Notifications.WebPush.Payload
-  alias Bonfire.Notifications.WebPush.SubscriptionWorker
+  alias Bonfire.Notify.WebPush
+  alias Bonfire.Notify.WebPush.Payload
+  alias Bonfire.Notify.WebPush.SubscriptionWorker
 
-  import Bonfire.Notifications.Test.FakeHelpers
+  import Bonfire.Notify.Test.FakeHelpers
 
   @valid_data """
     {
@@ -32,7 +32,7 @@ defmodule Bonfire.Notifications.WebPush.SubscriptionWorkerTest do
     {:ok, worker_pid} = SubscriptionWorker.start_link([sub_data.digest, sub_data.subscription])
 
     # Explicitly allow the worker access to the mock adapter and repo
-    Mox.allow(Bonfire.Notifications.WebPush.TestAdapter, self(), worker_pid)
+    Mox.allow(Bonfire.Notify.WebPush.TestAdapter, self(), worker_pid)
     Sandbox.allow(repo(), self(), worker_pid)
 
     {:ok, Map.merge(sub_data, %{user: user, worker_pid: worker_pid})}
@@ -123,13 +123,13 @@ defmodule Bonfire.Notifications.WebPush.SubscriptionWorkerTest do
   end
 
   defp expect_response(status_code, payload, subscription, n \\ 1) do
-    Bonfire.Notifications.WebPush.TestAdapter
+    Bonfire.Notify.WebPush.TestAdapter
     |> expect(:make_request, n, fn ^payload, ^subscription ->
       {:ok, %HTTPoison.Response{status_code: status_code}}
     end)
   end
 
   defp max_attempts do
-    Bonfire.Common.Config.get_ext(:bonfire_notifications, Bonfire.Notifications.WebPush)[:max_attempts]
+    Bonfire.Common.Config.get_ext(:bonfire_notify, Bonfire.Notify.WebPush)[:max_attempts]
   end
 end

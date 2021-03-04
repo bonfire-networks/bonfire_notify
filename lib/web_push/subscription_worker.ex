@@ -1,4 +1,4 @@
-defmodule Bonfire.Notifications.WebPush.SubscriptionWorker do
+defmodule Bonfire.Notify.WebPush.SubscriptionWorker do
   @moduledoc """
   A worker process for sending notifications to a subscription.
   """
@@ -9,9 +9,9 @@ defmodule Bonfire.Notifications.WebPush.SubscriptionWorker do
 
   import Bonfire.Common.Config, only: [repo: 0]
 
-  alias Bonfire.Notifications.WebPush.Payload
-  alias Bonfire.Notifications.WebPush.Schema
-  alias Bonfire.Notifications.WebPush.Subscription
+  alias Bonfire.Notify.WebPush.Payload
+  alias Bonfire.Notify.WebPush.UserSubscription
+  alias Bonfire.Notify.WebPush.Subscription
 
   defstruct [:digest, :subscription]
 
@@ -23,7 +23,7 @@ defmodule Bonfire.Notifications.WebPush.SubscriptionWorker do
   # Client
 
   def start_link([digest, subscription]) do
-    if Bonfire.Notifications.enabled() do
+    if Bonfire.Notify.enabled() do
       GenServer.start_link(__MODULE__, [digest, subscription], name: via_tuple(digest))
     else
       {:error, :not_enabled}
@@ -35,7 +35,7 @@ defmodule Bonfire.Notifications.WebPush.SubscriptionWorker do
   end
 
   defp via_tuple(digest) do
-    {:via, Registry, {Bonfire.Notifications.Registry, registry_key(digest)}}
+    {:via, Registry, {Bonfire.Notify.Registry, registry_key(digest)}}
   end
 
   def send_web_push(digest, %Payload{} = payload) do
@@ -131,17 +131,17 @@ defmodule Bonfire.Notifications.WebPush.SubscriptionWorker do
   # Internal
 
   defp adapter do
-    default = Bonfire.Notifications.WebPush.HttpAdapter
+    default = Bonfire.Notify.WebPush.HttpAdapter
     IO.inspect(vapid_keys: Application.get_env(:web_push_encryption, :vapid_details))
-    adapter = Bonfire.Common.Config.get_ext(:bonfire_notifications, Bonfire.Notifications.WebPush)[:adapter] || default
+    adapter = Bonfire.Common.Config.get_ext(:bonfire_notify, Bonfire.Notify.WebPush)[:adapter] || default
     IO.inspect adapter
   end
 
   defp retry_timeout do
-    Bonfire.Common.Config.get_ext(:bonfire_notifications, Bonfire.Notifications.WebPush)[:retry_timeout]
+    Bonfire.Common.Config.get_ext(:bonfire_notify, Bonfire.Notify.WebPush)[:retry_timeout]
   end
 
   defp max_attempts do
-    Bonfire.Common.Config.get_ext(:bonfire_notifications, Bonfire.Notifications.WebPush)[:max_attempts]
+    Bonfire.Common.Config.get_ext(:bonfire_notify, Bonfire.Notify.WebPush)[:max_attempts]
   end
 end
