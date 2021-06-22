@@ -86,7 +86,7 @@ defmodule Bonfire.Notify.WebPush do
   def get_subscriptions(user_ids) do
     user_ids
     |> build_query()
-    |> repo().all()
+    |> repo().many()
     |> parse_records()
   end
 

@@ -62,7 +62,7 @@ defmodule Bonfire.Notify.WebPush.UserWorker do
   defp fetch_subscriptions(user_id) do
     user_id
     |> build_query()
-    |> repo().all()
+    |> repo().many()
     |> parse_records()
   end
 

@@ -35,7 +35,7 @@ defmodule Bonfire.Notify.UserNotifications do
   def list(%User{} = user, %{} = activity) do
     user
     |> query(activity)
-    |> repo().all()
+    |> repo().many()
   end
 
   @doc """
