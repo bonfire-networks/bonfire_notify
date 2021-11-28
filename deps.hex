@@ -1,5 +1,3 @@
-bamboo = "~> 1.5" # email
-bamboo_smtp = "~> 3.0.0"
 ecto_sql = "~> 3.4"
 faker = "~> 0.14" # fake data generation
 flexto = "~> 0.2.1"
