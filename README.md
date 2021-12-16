@@ -1,4 +1,4 @@
-# Bonfire:Notify
+# Bonfire.Notify
 
 An extension for [Bonfire](https://bonfire.cafe/) that handles:
 
