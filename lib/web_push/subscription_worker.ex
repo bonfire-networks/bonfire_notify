@@ -4,7 +4,7 @@ defmodule Bonfire.Notify.WebPush.SubscriptionWorker do
   """
 
   use GenServer
-  require Logger
+  import Where
   import Ecto.Query
 
   import Bonfire.Common.Config, only: [repo: 0]
@@ -82,17 +82,17 @@ defmodule Bonfire.Notify.WebPush.SubscriptionWorker do
   end
 
   defp handle_push_response({:ok, %_{status_code: 400} = resp}, state, _, _) do
-    Logger.error("Push notification request was invalid: #{inspect(resp)}")
+    error("Push notification request was invalid: #{inspect(resp)}")
     {:noreply, state}
   end
 
   defp handle_push_response({:ok, %_{status_code: 429} = resp}, state, _, _) do
-    Logger.error("Push notifications were rate limited: #{inspect(resp)}")
+    error("Push notifications were rate limited: #{inspect(resp)}")
     {:noreply, state}
   end
 
   defp handle_push_response({:ok, %_{status_code: 413} = resp}, state, _, _) do
-    Logger.error("Push notification was too large: #{inspect(resp)}")
+    error("Push notification was too large: #{inspect(resp)}")
     {:noreply, state}
   end
 

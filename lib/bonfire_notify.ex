@@ -2,7 +2,7 @@ defmodule Bonfire.Notify do
   @moduledoc false
 
   use Application
-  require Logger
+  import Where
 
   def start(_type, _args) do
     if enabled() do
@@ -16,7 +16,7 @@ defmodule Bonfire.Notify do
       Supervisor.start_link(children, opts)
 
     else
-      Logger.warn("""
+      warn("""
       Web Push not enabled because a VAPID key pair was not found. Please run:
 
           mix web_push.gen.keypair
