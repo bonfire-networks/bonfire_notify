@@ -130,6 +130,6 @@ defmodule Bonfire.Notify.WebPush.SubscriptionWorkerTest do
   end
 
   defp max_attempts do
-    Bonfire.Common.Config.get_ext(:bonfire_notify, Bonfire.Notify.WebPush)[:max_attempts]
+    Bonfire.Common.Config.get(Bonfire.Notify.WebPush)[:max_attempts]
   end
 end
