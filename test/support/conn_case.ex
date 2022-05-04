@@ -28,7 +28,7 @@ defmodule Bonfire.Notify.ConnCase do
       import Bonfire.UI.Common.Testing.Helpers
 
       import Phoenix.LiveViewTest
-      import Bonfire.Notify.ConnCase
+      # import Bonfire.Notify.ConnCase
       import Bonfire.Notify.Test.ConnHelpers
       import Bonfire.Notify.Test.FakeHelpers
       alias Bonfire.Notify.Fake
