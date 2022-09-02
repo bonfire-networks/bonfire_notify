@@ -2,7 +2,7 @@ defmodule Bonfire.Notify do
   @moduledoc false
 
   use Application
-  import Where
+  import Untangle
 
   def start(_type, _args) do
     if enabled() do

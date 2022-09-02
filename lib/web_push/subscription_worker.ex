@@ -4,7 +4,7 @@ defmodule Bonfire.Notify.WebPush.SubscriptionWorker do
   """
 
   use GenServer
-  import Where
+  import Untangle
   import Ecto.Query
 
   import Bonfire.Common.Config, only: [repo: 0]
