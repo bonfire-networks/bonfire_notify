@@ -29,6 +29,7 @@ defmodule Bonfire.Notify.WebPush.SubscriptionWorkerTest do
   setup do
     user = fake_user!()
     {:ok, sub_data} = WebPush.subscribe(user.id, @valid_data)
+
     {:ok, worker_pid} = SubscriptionWorker.start_link([sub_data.digest, sub_data.subscription])
 
     # Explicitly allow the worker access to the mock adapter and repo

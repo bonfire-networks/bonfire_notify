@@ -19,14 +19,15 @@ defmodule Bonfire.Notify.UserNotifications do
   """
   @spec query(User.t()) :: Ecto.Query.t()
   def query(%User{id: user_id}) do
-    from n in Notification,
+    from(n in Notification,
       join: u in assoc(n, :users),
       where: u.id == ^user_id
+    )
   end
 
   def query(%User{id: user_id}, %{id: activity_id}) do
     topic = "activity:#{activity_id}"
-    from n in Notification, where: n.topic == ^topic and n.user_id == ^user_id
+    from(n in Notification, where: n.topic == ^topic and n.user_id == ^user_id)
   end
 
   @doc """
@@ -41,7 +42,8 @@ defmodule Bonfire.Notify.UserNotifications do
   @doc """
   Fetches a notification by id.
   """
-  @spec get_notification(User.t(), String.t()) :: {:ok, Notification.t()} | {:error, String.t()}
+  @spec get_notification(User.t(), String.t()) ::
+          {:ok, Notification.t()} | {:error, String.t()}
   def get_notification(%User{} = user, id) do
     user
     |> query()
@@ -57,19 +59,15 @@ defmodule Bonfire.Notify.UserNotifications do
     # {:error, dgettext("errors", "Notification not found")}
   end
 
-
   @doc """
   Records an activity notification.
   """
 
   def record_notification(%User{} = user, data, type \\ "REPLY_CREATED") do
-
     user
     |> insert_record(type, "activity:#{Map.get(data, :id)}", data)
     |> after_record(user)
   end
-
-
 
   defp insert_record(user, event_type, topic, data) do
     params = %{
@@ -94,7 +92,8 @@ defmodule Bonfire.Notify.UserNotifications do
   @doc """
   Dismiss notifications by topic.
   """
-  @spec dismiss_topic(User.t(), String.t(), NaiveDateTime.t()) :: {:ok, String.t()}
+  @spec dismiss_topic(User.t(), String.t(), NaiveDateTime.t()) ::
+          {:ok, String.t()}
   def dismiss_topic(%User{} = user, topic, now \\ nil) do
     now = now || NaiveDateTime.utc_now()
 

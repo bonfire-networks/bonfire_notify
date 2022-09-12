@@ -17,7 +17,6 @@ defmodule Bonfire.Notify.WebPush do
   alias Bonfire.Notify.WebPush.UserSupervisor
   alias Bonfire.Notify.WebPush.UserWorker
 
-
   @doc """
   Starts the process supervisor.
   """
@@ -91,7 +90,7 @@ defmodule Bonfire.Notify.WebPush do
   end
 
   defp build_query(user_ids) do
-    from r in Schema, where: r.user_id in ^user_ids
+    from(r in Schema, where: r.user_id in ^user_ids)
   end
 
   defp parse_records(records) do
@@ -120,7 +119,8 @@ defmodule Bonfire.Notify.WebPush do
   @doc """
   Sends a notification to a particular subscription.
   """
-  @spec send_web_push(String.t(), Payload.t()) :: :ok | :ignore | {:error, any()}
+  @spec send_web_push(String.t(), Payload.t()) ::
+          :ok | :ignore | {:error, any()}
   def send_web_push(user_id, %Payload{} = payload) do
     user_id
     |> UserSupervisor.start_worker()

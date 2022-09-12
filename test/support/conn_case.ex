@@ -40,10 +40,8 @@ defmodule Bonfire.Notify.ConnCase do
   end
 
   setup tags do
-
     Bonfire.Common.Test.Interactive.setup_test_repo(tags)
 
     {:ok, []}
   end
-
 end

@@ -4,11 +4,11 @@ defmodule Bonfire.Notify.UserNotificationsTest do
   alias Bonfire.Notify.UserNotifications
   alias Bonfire.Notify.Notification
 
-
   describe "record_reply_created/2" do
     test "inserts a notification record" do
       user = fake_user!()
       reply = %Reply{id: "xyz", post_id: "abc"}
+
       {:ok, notification} = UserNotifications.record_notification(user, reply, "TEST")
 
       assert notification.topic == "post:abc"

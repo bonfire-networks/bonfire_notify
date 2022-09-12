@@ -10,7 +10,6 @@ defmodule Bonfire.Notify.Notify do
 
   alias Bonfire.Data.Identity.User
 
-
   def notify(object, %User{id: user_id} = user) when is_binary(user_id) do
     creator = Map.get(object, :creator, %{})
 
@@ -21,8 +20,8 @@ defmodule Bonfire.Notify.Notify do
     WebPush.send_web_push(user_id, payload)
   end
 
-  def notify(object, subscribers) when is_list(subscribers) do # TODO: dedup
-
+  # TODO: dedup
+  def notify(object, subscribers) when is_list(subscribers) do
     creator = Map.get(object, :creator, %{})
 
     record_notifications(object, creator, subscribers)
@@ -43,9 +42,10 @@ defmodule Bonfire.Notify.Notify do
   end
 
   defp send_push_notifications(context, payload, creator) do
-
     UserSubscriptions.list()
-    |> Enum.filter(fn {_, value} -> Enum.any?(value.metas, fn meta -> meta.expanded end) end)
+    |> Enum.filter(fn {_, value} ->
+      Enum.any?(value.metas, fn meta -> meta.expanded end)
+    end)
     |> Enum.map(fn {key, _} -> key end)
     |> Enum.each(fn user_id ->
       if user_id != Map.get(creator, :id) do
@@ -54,12 +54,15 @@ defmodule Bonfire.Notify.Notify do
     end)
   end
 
-
   @doc """
   Builds a payload for a push notifications.
   """
   def build_push_payload(%{} = object, creator, context) do
-    body = Map.get(creator, :name) <> ": " <> Map.get(object, :summary) || Map.get(object, :content) # |> StringHelpers.truncate()
+    # |> StringHelpers.truncate()
+    body =
+      Map.get(creator, :name) <> ": " <> Map.get(object, :summary) ||
+        Map.get(object, :content)
+
     payload = %WebPush.Payload{
       title: Map.get(object, :name),
       body: body,
@@ -68,6 +71,4 @@ defmodule Bonfire.Notify.Notify do
       tag: nil
     }
   end
-
-
 end

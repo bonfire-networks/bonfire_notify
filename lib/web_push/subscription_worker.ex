@@ -62,6 +62,7 @@ defmodule Bonfire.Notify.WebPush.SubscriptionWorker do
   defp make_request(state, payload, attempts) do
     IO.inspect(state: state)
     IO.inspect(payload: payload)
+
     payload
     |> adapter().make_request(state.subscription)
     |> handle_push_response(state, payload, attempts)
@@ -123,7 +124,7 @@ defmodule Bonfire.Notify.WebPush.SubscriptionWorker do
   end
 
   defp by_digest(digest) do
-    from r in Schema, where: r.digest == ^digest
+    from(r in Schema, where: r.digest == ^digest)
   end
 
   defp handle_delete(_), do: :ok
@@ -132,9 +133,12 @@ defmodule Bonfire.Notify.WebPush.SubscriptionWorker do
 
   defp adapter do
     default = Bonfire.Notify.WebPush.HttpAdapter
+
     IO.inspect(vapid_keys: Application.get_env(:web_push_encryption, :vapid_details))
+
     adapter = Bonfire.Common.Config.get(Bonfire.Notify.WebPush)[:adapter] || default
-    IO.inspect adapter
+
+    IO.inspect(adapter)
   end
 
   defp retry_timeout do

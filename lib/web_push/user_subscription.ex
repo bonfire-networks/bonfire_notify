@@ -10,9 +10,9 @@ defmodule Bonfire.Notify.WebPush.UserSubscription do
   @foreign_key_type :binary_id
 
   schema "bonfire_web_push_subscription" do
-    field :user_id, :binary
-    field :digest, :string
-    field :data, :string
+    field(:user_id, :binary)
+    field(:digest, :string)
+    field(:data, :string)
 
     timestamps()
   end

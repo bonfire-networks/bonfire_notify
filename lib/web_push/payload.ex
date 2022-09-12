@@ -4,7 +4,11 @@ defmodule Bonfire.Notify.WebPush.Payload do
   """
 
   @enforce_keys [:title, :body]
-  defstruct title: "Bonfire", body: "", tag: nil, require_interaction: false, url: nil
+  defstruct title: "Bonfire",
+            body: "",
+            tag: nil,
+            require_interaction: false,
+            url: nil
 
   @type t :: %__MODULE__{
           title: String.t(),

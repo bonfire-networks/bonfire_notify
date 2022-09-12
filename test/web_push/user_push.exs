@@ -11,9 +11,12 @@ defmodule Bonfire.Notify.UsersTest do
       {:ok, %{user: user}}
     end
 
-    test "inserts the subscription for the user", %{user: %User{id: user_id} = user} do
+    test "inserts the subscription for the user", %{
+      user: %User{id: user_id} = user
+    } do
       # Gracefully handle duplicates
       {:ok, _} = Users.create_push_subscription(user, valid_push_subscription_data("a"))
+
       {:ok, _} = Users.create_push_subscription(user, valid_push_subscription_data("a"))
 
       assert %{^user_id => [%Subscription{endpoint: "a"}]} =
@@ -34,7 +37,12 @@ defmodule Bonfire.Notify.UsersTest do
 
       # Multiple users can have the same subscription
       {:ok, %User{id: another_user_id} = another_user} = create_user()
-      {:ok, _} = Users.create_push_subscription(another_user, valid_push_subscription_data("a"))
+
+      {:ok, _} =
+        Users.create_push_subscription(
+          another_user,
+          valid_push_subscription_data("a")
+        )
 
       assert %{^another_user_id => [%Subscription{endpoint: "a"}]} =
                Users.get_push_subscriptions([another_user_id])
@@ -45,8 +53,11 @@ defmodule Bonfire.Notify.UsersTest do
       assert %{} = Users.get_push_subscriptions([user.id])
     end
 
-    test "returns an invalid keys error if payload has wrong data", %{user: user} do
+    test "returns an invalid keys error if payload has wrong data", %{
+      user: user
+    } do
       assert {:error, :invalid_keys} = Users.create_push_subscription(user, ~s({"foo": "bar"}))
+
       assert %{} = Users.get_push_subscriptions([user.id])
     end
   end

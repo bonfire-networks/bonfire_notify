@@ -28,13 +28,24 @@ defmodule Bonfire.Notify.WebPush.Subscription do
   end
 
   defp after_decode(
-         {:ok, %{"endpoint" => endpoint, "keys" => %{"auth" => auth, "p256dh" => p256dh}}}
+         {:ok,
+          %{
+            "endpoint" => endpoint,
+            "keys" => %{"auth" => auth, "p256dh" => p256dh}
+          }}
        ) do
-            client_auth_token = Base.url_decode64!(auth, padding: false)
-IO.inspect(client_auth_token: client_auth_token)
-IO.inspect byte_size(client_auth_token)
-IO.inspect byte_size("AUTH")
-    IO.inspect(subscription_decoded: %{endpoint: endpoint, keys: %{auth: auth, p256dh: p256dh}})
+    client_auth_token = Base.url_decode64!(auth, padding: false)
+    IO.inspect(client_auth_token: client_auth_token)
+    IO.inspect(byte_size(client_auth_token))
+    IO.inspect(byte_size("AUTH"))
+
+    IO.inspect(
+      subscription_decoded: %{
+        endpoint: endpoint,
+        keys: %{auth: auth, p256dh: p256dh}
+      }
+    )
+
     {:ok, %__MODULE__{endpoint: endpoint, keys: %{auth: auth, p256dh: p256dh}}}
   end
 

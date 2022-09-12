@@ -1,5 +1,4 @@
 defmodule Bonfire.Notify.UserSubscriptions do
-
   alias Bonfire.Notify.WebPush
 
   alias Bonfire.Data.Identity.User
@@ -31,5 +30,4 @@ defmodule Bonfire.Notify.UserSubscriptions do
   def list(user_id) do
     list([user_id])
   end
-
 end

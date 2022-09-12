@@ -67,7 +67,7 @@ defmodule Bonfire.Notify.WebPush.UserWorker do
   end
 
   defp build_query(user_id) do
-    from r in Schema, where: r.user_id == ^user_id
+    from(r in Schema, where: r.user_id == ^user_id)
   end
 
   defp parse_records(records) do

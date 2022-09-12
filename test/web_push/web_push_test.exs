@@ -18,6 +18,7 @@ defmodule Bonfire.Notify.WebPushTest do
   describe "parse_subscription/1" do
     test "parses valid data" do
       {:ok, %Subscription{} = subscription} = WebPush.parse_subscription(@valid_data)
+
       assert subscription.endpoint == "https://endpoint.test"
       assert subscription.keys.auth == "auth"
       assert subscription.keys.p256dh == "p256dh"

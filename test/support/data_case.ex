@@ -20,18 +20,15 @@ defmodule Bonfire.Notify.DataCase do
 
   using do
     quote do
-
       import Ecto
       import Ecto.Changeset
       import Ecto.Query
       # import Bonfire.Notify.DataCase
       import Bonfire.Notify.Test.FakeHelpers
-
     end
   end
 
   setup tags do
-
     Bonfire.Common.Test.Interactive.setup_test_repo(tags)
 
     :ok
