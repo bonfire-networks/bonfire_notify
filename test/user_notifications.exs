@@ -43,7 +43,7 @@ defmodule Bonfire.Notify.UserNotificationsTest do
       # {:ok, ^topic} = UserNotifications.dismiss_topic(user, topic, earlier_time)
       # {:ok, ^topic} = UserNotifications.dismiss_topic(user, topic, now)
 
-      # updated_notification = Repo.get(Notification, notification.id)
+      # updated_notification = repo().get(Notification, notification.id)
       # assert updated_notification.updated_at == earlier_time
     end
   end
