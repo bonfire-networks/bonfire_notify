@@ -7,8 +7,8 @@ pointers_ulid = "~> 0.2"
 pointers = "~> 0.5.1"
 postgrex = ">= 0.0.0"
 recase = "~> 0.5" # string recasing
-telemetry_metrics = "~> 0.4"
-telemetry_poller = "~> 0.4"
+telemetry_metrics = "~> 0.6.1"
+telemetry_poller = "~> 1.0.0"
 # specific to this extension
 web_push_encryption = "~> 0.2.1"
 # plugins

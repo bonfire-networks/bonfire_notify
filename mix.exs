@@ -1,4 +1,4 @@
-Code.eval_file("mess.exs")
+Code.eval_file("mess.exs", (if File.exists?("../../lib/mix/mess.exs"), do: "../../lib/mix/"))
 
 defmodule Bonfire.Notify.MixProject do
   use Mix.Project
@@ -15,9 +15,9 @@ defmodule Bonfire.Notify.MixProject do
       deps:
         Mess.deps([
           {:phoenix_live_reload, "~> 1.2", only: :dev},
-          {:dbg, "~> 1.0", only: [:dev, :test]},
+
           {:floki, ">= 0.0.0", only: [:dev, :test]},
-          {:mox, "~> 0.5", only: [:dev, :test]}
+          {:mox, "~> 1.0", only: [:dev, :test]}
         ])
     ]
   end
