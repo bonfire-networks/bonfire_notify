@@ -95,7 +95,7 @@ defmodule Bonfire.Notify.UserNotifications do
   @spec dismiss_topic(User.t(), String.t(), NaiveDateTime.t()) ::
           {:ok, String.t()}
   def dismiss_topic(%User{} = user, topic, now \\ nil) do
-    now = now || NaiveDateTime.utc_now()
+    now = now || NaiveDateTime.utc_now(Calendar.ISO)
 
     user
     |> query()
