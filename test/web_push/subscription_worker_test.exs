@@ -126,7 +126,7 @@ defmodule Bonfire.Notify.WebPush.SubscriptionWorkerTest do
   defp expect_response(status_code, payload, subscription, n \\ 1) do
     Bonfire.Notify.WebPush.TestAdapter
     |> expect(:make_request, n, fn ^payload, ^subscription ->
-      {:ok, %HTTPoison.Response{status_code: status_code}}
+      {:ok, %{status: status_code}}
     end)
   end
 
