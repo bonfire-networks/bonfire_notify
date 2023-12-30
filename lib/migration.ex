@@ -1,7 +1,7 @@
 defmodule Bonfire.Notify.Migration do
   @moduledoc false
   use Ecto.Migration
-  import Pointers.Migration
+  import Needle.Migration
 
   def up do
     create table(:bonfire_web_push_subscription, primary_key: false) do
