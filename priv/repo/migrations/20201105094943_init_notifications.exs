@@ -1,4 +1,4 @@
-defmodule Bonfire.Notify.Repo.Migrations.Init  do
+defmodule Bonfire.Notify.Repo.Migrations.Init do
   @moduledoc false
   use Ecto.Migration
 
