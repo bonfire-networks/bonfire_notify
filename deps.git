@@ -1,4 +1,4 @@
-bonfire_common = "https://github.com/bonfire-networks/bonfire_common#main"
-# bonfire_web_phoenix = "https://github.com/bonfire-networks/bonfire_web_phoenix#main"
-bonfire_data_identity="https://github.com/bonfire-networks/bonfire_data_identity#main"
-bonfire_me = "https://github.com/bonfire-networks/bonfire_me#main"
+bonfire_common = "https://github.com/bonfire-networks/bonfire_common"
+# bonfire_web_phoenix = "https://github.com/bonfire-networks/bonfire_web_phoenix"
+bonfire_data_identity="https://github.com/bonfire-networks/bonfire_data_identity"
+bonfire_me = "https://github.com/bonfire-networks/bonfire_me"
