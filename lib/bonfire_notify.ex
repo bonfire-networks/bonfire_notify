@@ -38,11 +38,7 @@ defmodule Bonfire.Notify do
         false
 
       list when is_list(list) ->
-        if list[:private_key] != "" and list[:public_key] != "" do
-          true
-        else
-          false
-        end
+        list[:private_key] != "" and list[:public_key] != ""
 
       _ ->
         false

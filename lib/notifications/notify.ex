@@ -41,7 +41,7 @@ defmodule Bonfire.Notify.Notify do
     end)
   end
 
-  defp send_push_notifications(context, payload, creator) do
+  defp send_push_notifications(_context, payload, creator) do
     UserSubscriptions.list()
     |> Enum.filter(fn {_, value} ->
       Enum.any?(value.metas, fn meta -> meta.expanded end)
@@ -57,7 +57,7 @@ defmodule Bonfire.Notify.Notify do
   @doc """
   Builds a payload for a push notifications.
   """
-  def build_push_payload(%{} = object, creator, context) do
+  def build_push_payload(%{} = object, creator, _context) do
     # |> StringHelpers.truncate()
     body =
       Map.get(creator, :name) <> ": " <> Map.get(object, :summary) ||
