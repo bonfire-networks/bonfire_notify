@@ -6,7 +6,7 @@ defmodule Bonfire.Notify.Notification do
 
   use Ecto.Schema
 
-  @type t :: %__MODULE__{}
+  # @type t :: %__MODULE__{}
   @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary
 
