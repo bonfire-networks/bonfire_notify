@@ -7,6 +7,7 @@ defmodule Bonfire.Notify.WebPush.SubscriptionWorker do
   import Untangle
   import Ecto.Query
 
+  use Bonfire.Common.Config
   import Bonfire.Common.Config, only: [repo: 0]
 
   alias Bonfire.Notify.WebPush.Payload
