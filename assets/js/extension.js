@@ -1,0 +1,321 @@
+import { PWAUtils } from "./pwa-utils";
+
+let NotifyHooks = {};
+
+NotifyHooks.PushNotificationHook = {
+  mounted() {
+    console.log('🔔 PushNotificationHook: mounted() called');
+    
+    this.vapidPublicKey = document.getElementById('vapid-public-key')?.value;
+    console.log('🔑 VAPID public key:', this.vapidPublicKey ? 'Found' : '❌ NOT FOUND');
+    
+    this.swRegistration = null;
+    this.subscribeBtn = document.getElementById('subscribe-btn');
+    console.log('🔘 Subscribe button:', this.subscribeBtn ? 'Found' : '❌ NOT FOUND');
+    
+    this.init();
+  },
+
+  async init() {
+    console.log('🚀 PushNotificationHook: init() starting...');
+    
+    if (!('serviceWorker' in navigator)) {
+      console.error('❌ Service Worker not supported in this browser');
+      return;
+    }
+    console.log('✅ Service Worker API available');
+    
+    // Check Push API support
+    if (!('PushManager' in window)) {
+      console.error('❌ Push API not supported in this browser');
+      return;
+    }
+    console.log('✅ Push API available');
+
+    try {
+      console.log('📝 Registering service worker at /pwabuilder-sw.js...');
+      this.swRegistration = await navigator.serviceWorker.register('/pwabuilder-sw.js', {
+        scope: '/'  // Explicitly set scope
+      });
+      console.log('✅ Service Worker registered');
+      console.log('   - Scope:', this.swRegistration.scope);
+      console.log('   - Active:', this.swRegistration.active ? 'Yes' : 'No');
+      console.log('   - Installing:', this.swRegistration.installing ? 'Yes' : 'No');
+      console.log('   - Waiting:', this.swRegistration.waiting ? 'Yes' : 'No');
+      
+      await navigator.serviceWorker.ready;
+      console.log('✅ Service Worker ready');
+      
+      // Check service worker state after ready
+      console.log('📊 Service Worker state after ready:');
+      console.log('   - Active state:', this.swRegistration.active?.state);
+      
+      // Check if pushManager is available
+      if (!this.swRegistration.pushManager) {
+        console.error('❌ Push Manager not available on registration');
+        return;
+      }
+      console.log('✅ Push Manager available');
+
+      await this.updateStatus();
+      this.setupEventListeners();
+
+      window.addEventListener("phx:device_removed", e => {
+        console.log('📢 Received phx:device_removed event:', e.detail);
+        e.preventDefault();
+        this.handleDeviceRemoved(e.detail.endpoint);
+      })
+
+      const installBtn = document.getElementById('install-button');
+      
+      if(installBtn && PWAUtils.isPWAMode()) {
+          console.log('📱 Running in PWA mode, sending is-pwa event');
+          this.pushEvent('Bonfire.Notify:is-pwa', true);
+        PWAUtils.promptToInstallPWA();
+        installBtn.style.display = 'block';
+      } else {
+        console.log('🌐 Not in PWA mode');
+        if (installBtn) { installBtn.style.display = 'none'; }
+      }
+
+    } catch (error) {
+      console.error('❌ Push hook init failed:', error);
+      console.error('Error stack:', error.stack);
+    }
+  },
+
+  setupEventListeners() {
+    console.log('🎧 Setting up event listeners...');
+    
+    if (this.subscribeBtn) {
+      this.subscribeBtn.addEventListener('click', async () => {
+        console.log('👆 Subscribe button clicked');
+        const isSubscribed = await this.isSubscribed();
+        console.log('Current subscription status:', isSubscribed ? 'Subscribed' : 'Not subscribed');
+        
+        if (isSubscribed) {
+          console.log('➡️ Unsubscribing...');
+          await this.unsubscribe();
+        } else {
+          console.log('➡️ Subscribing...');
+          await this.subscribe();
+        }
+        await this.updateStatus();
+      });
+      console.log('✅ Event listeners set up');
+    } else {
+      console.warn('⚠️ Subscribe button not found, skipping event listener setup');
+    }
+  },
+
+  async isSubscribed() {
+    if (!this.swRegistration) {
+      console.log('❌ No SW registration, returning false');
+      return false;
+    }
+    
+    const subscription = await this.swRegistration.pushManager.getSubscription();
+    console.log('📊 Current subscription:', subscription ? 'Active' : 'None');
+    return !!subscription;
+  },
+
+  async subscribe() {
+    try {
+      console.log('🔔 Starting subscription process...');
+      
+
+      // Check current subscription first
+      const existingSub = await this.swRegistration.pushManager.getSubscription();
+      if (existingSub) {
+        console.log('ℹ️ Existing subscription found, unsubscribing first...');
+        await existingSub.unsubscribe();
+      }
+      
+      console.log('🔐 Requesting notification permission...');
+      const permission = await Notification.requestPermission();
+      console.log('📋 Permission result:', permission);
+      
+      if (permission !== 'granted') {
+        console.error('❌ Notification permission denied');
+        throw new Error('Permission denied');
+      }
+      console.log('✅ Notification permission granted');
+      
+      console.log('🔑 Converting VAPID key...');
+      console.log('   - Original key:', this.vapidPublicKey);
+      const applicationServerKey = this.urlBase64ToUint8Array(this.vapidPublicKey);
+      console.log('✅ VAPID key converted');
+      console.log('   - Array length:', applicationServerKey.length);
+      console.log('   - First few bytes:', Array.from(applicationServerKey.slice(0, 10)));
+      
+      console.log('📝 Attempting to subscribe to push manager...');
+      console.log('   - userVisibleOnly: true');
+      console.log('   - applicationServerKey length:', applicationServerKey.length);
+      
+      const subscription = await this.swRegistration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: applicationServerKey
+      });
+      
+      console.log('✅ Subscription created successfully!');
+      console.log('   - Endpoint:', subscription.endpoint);
+      console.log('   - Keys:', Object.keys(subscription.toJSON().keys));
+      
+      console.log('📤 Sending subscription to server...');
+      this.pushEvent('Bonfire.Notify:subscribe', {
+        subscription: subscription.toJSON()
+      });
+      console.log('✅ Subscription sent to server');
+      
+    } catch (error) {
+      console.error('❌ Subscribe failed');
+      console.error('   - Error name:', error.name);
+      console.error('   - Error message:', error.message);
+      console.error('   - Error code:', error.code);
+      console.error('   - Full error:', error);
+      console.error('   - Stack trace:', error.stack);
+      
+      // Log additional browser-specific info
+      console.log('🔍 Browser info:');
+      console.log('   - User agent:', navigator.userAgent);
+      console.log('   - Platform:', navigator.platform);
+      console.log('   - Service Worker state:', this.swRegistration?.active?.state);
+      console.log('   - Current URL:', window.location.href);
+      console.log('   - Protocol:', window.location.protocol);
+      console.log('   - Online status:', navigator.onLine ? 'Online' : 'Offline');
+      
+      // Firefox-specific error handling
+      if (error.name === 'AbortError') {
+        console.error('════════════════════════════════════════════════════════════');
+        console.error('🚨 PUSH NOTIFICATION SUBSCRIPTION FAILED');
+        console.error('Error: AbortError (code 20) - Cannot establish push subscription');
+        console.error('🔍 Diagnosis:');
+        console.error('   • WebSocket connection is failing or blocked');
+        console.error('✅ Next steps to fix:');
+        console.error('-  Make sure you\'re using HTTPS with a valid certificate (i.e. not localhost)');
+        console.error('-  Try a different on this same domain');
+        console.error('-  On Firefox check about:config');
+        console.error('   • Open: about:config');
+        console.error('   • Search: dom.push.enabled → must be true');
+        console.error('   • Search: dom.push.serverURL → check if custom');
+        console.error('   • Search: dom.serviceWorkers.enabled → must be true');
+        console.error('-  Test on different network');
+        console.error('   • Try mobile hotspot to rule out network/firewall');
+        console.error('   • Corporate/VPN networks often block WebSockets');
+        console.error('-  Firefox Private Window (Ctrl+Shift+P)');
+        console.error('   • Rules out extension/setting interference');
+        console.error('════════════════════════════════════════════════════════════');
+      }
+    }
+  },
+
+  async unsubscribe() {
+    try {
+      console.log('🔕 Starting unsubscribe process...');
+      
+      const subscription = await this.swRegistration.pushManager.getSubscription();
+      if (subscription) {
+        console.log('📝 Found subscription to unsubscribe:', subscription.endpoint);
+        
+        await subscription.unsubscribe();
+        console.log('✅ Unsubscribed from push manager');
+        
+        console.log('📤 Notifying server about unsubscribe...');
+        this.pushEvent('Bonfire.Notify:unsubscribe', { endpoint: subscription.endpoint });
+        console.log('✅ Server notified');
+      } else {
+        console.warn('⚠️ No subscription found to unsubscribe');
+      }
+    } catch (error) {
+      console.error('❌ Unsubscribe failed:', error.message);
+      console.error('Error details:', error);
+    }
+  },
+
+  async updateStatus() {
+    if (!this.swRegistration) {
+      console.log('❌ updateStatus: No SW registration');
+      return;
+    }
+    
+    try {
+      const subscription = await this.swRegistration.pushManager.getSubscription();
+      console.log('🔄 Updating UI status, subscription:', subscription ? 'Active' : 'None');
+      
+      if (this.subscribeBtn) {
+        if (subscription) {
+          this.subscribeBtn.textContent = 'Disable Notifications';
+          this.subscribeBtn.className = 'btn btn-error btn-sm';
+        } else {
+          this.subscribeBtn.textContent = 'Enable Notifications';
+          this.subscribeBtn.className = 'btn btn-primary btn-sm';
+        }
+        console.log('✅ Button UI updated');
+      }
+      
+      const indicator = document.getElementById('status-indicator');
+      if (indicator) {
+        if (subscription) {
+          indicator.className = 'badge badge-success w-3 h-3 rounded-full p-0';
+        } else {
+          indicator.className = 'badge badge-ghost w-3 h-3 rounded-full p-0';
+        }
+        console.log('✅ Status indicator updated');
+      }
+    } catch (error) {
+      console.error('❌ Error updating status:', error);
+    }
+  },
+
+  async handleDeviceRemoved(removedEndpoint) {
+    console.log('🗑️ Handling device removal for endpoint:', removedEndpoint);
+    
+    if (!this.swRegistration) {
+      console.log('❌ No SW registration, cannot handle device removal');
+      return;
+    }
+    
+    try {
+      const currentSubscription = await this.swRegistration.pushManager.getSubscription();
+      
+      if (currentSubscription) {
+        console.log('📊 Current subscription endpoint:', currentSubscription.endpoint);
+        console.log('🔍 Comparing with removed endpoint...');
+        
+        if (currentSubscription.endpoint === removedEndpoint) {
+          console.log('✅ Match found, unsubscribing...');
+          await currentSubscription.unsubscribe();
+          console.log('✅ Unsubscribed successfully');
+          await this.updateStatus();
+        } else {
+          console.log('ℹ️ Different endpoint, no action needed');
+        }
+      } else {
+        console.log('ℹ️ No current subscription, no action needed');
+      }
+    } catch (error) {
+      console.error('❌ Error handling device removal:', error);
+    }
+  },
+
+  urlBase64ToUint8Array(base64String) {
+    console.log('🔄 Converting base64 VAPID key, length:', base64String?.length);
+    
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding)
+      .replace(/-/g, '+')
+      .replace(/_/g, '/');
+    const rawData = window.atob(base64);
+    const result = new Uint8Array([...rawData].map(char => char.charCodeAt(0)));
+    
+    console.log('✅ Converted to Uint8Array, length:', result.length);
+    return result;
+  },
+
+  updated() {
+    console.log('🔄 PushNotificationHook: updated() called');
+    this.updateStatus();
+  }
+};
+
+export { NotifyHooks };

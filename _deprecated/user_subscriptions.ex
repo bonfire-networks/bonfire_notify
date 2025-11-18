@@ -1,3 +1,4 @@
+@ -1,33 +0,0 @@
 defmodule Bonfire.Notify.UserSubscriptions do
   alias Bonfire.Notify.WebPush
 

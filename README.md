@@ -7,7 +7,9 @@ An extension for [Bonfire](https://bonfire.cafe/) that handles:
 
 ## Configuration
 
-For Web Push, you need to generate keys: `mix web_push.gen.keypair`
+For Web Push, you need to generate keys: 
+`ExNudge.generate_vapid_keys()`
+<!-- `mix web_push.gen.keypair` -->
 
 Then set these env variables:
 WEB_PUSH_PUBLIC_KEY 	VAPID public key.

@@ -1,4 +1,4 @@
-defmodule Bonfire.Notify.WebPush.UserSubscription do
+defmodule Bonfire.Notify.UserSubscription do
   @moduledoc """
   The subscription schema.
   """

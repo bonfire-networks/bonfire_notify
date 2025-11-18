@@ -10,7 +10,7 @@ defmodule Bonfire.Notify.WebPush.UserWorker do
   import Bonfire.Common.Config, only: [repo: 0]
 
   alias Bonfire.Notify.WebPush.Payload
-  alias Bonfire.Notify.WebPush.UserSubscription
+  alias Bonfire.Notify.UserSubscription
   alias Bonfire.Notify.WebPush.Subscription
   alias Bonfire.Notify.WebPush.SubscriptionSupervisor
   alias Bonfire.Notify.WebPush.SubscriptionWorker

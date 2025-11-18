@@ -1,3 +1,4 @@
+@ -1,143 +0,0 @@
 defmodule Bonfire.Notify.WebPush do
   @moduledoc """
   The subsystem for recording push subscriptions and send them.
@@ -11,7 +12,7 @@ defmodule Bonfire.Notify.WebPush do
 
   alias Ecto.Changeset
   alias Bonfire.Notify.WebPush.Payload
-  alias Bonfire.Notify.WebPush.UserSubscription
+  alias Bonfire.Notify.UserSubscription
   alias Bonfire.Notify.WebPush.Subscription
   alias Bonfire.Notify.WebPush.SubscriptionSupervisor
   alias Bonfire.Notify.WebPush.UserSupervisor

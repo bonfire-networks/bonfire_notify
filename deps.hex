@@ -8,5 +8,6 @@ recase = "~> 0.8" # string recasing
 telemetry_metrics = "~> 1.0"
 telemetry_poller = "~> 1.1"
 # specific to this extension
-web_push_encryption = "~> 0.2.1"
+ex_nudge = "~> 1.0"
+# web_push_encryption = "~> 0.2.1"
 # plugins
