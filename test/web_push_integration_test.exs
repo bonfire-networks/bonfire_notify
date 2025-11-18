@@ -121,7 +121,7 @@ defmodule Bonfire.Notify.WebPushIntegrationTest do
       # but that's fine - we're just checking the integration works
       results =
         WebPush.send_web_push([user.id], message)
-        |> flood("ExNudge results")
+        |> debug("ExNudge results")
 
       # Assert we got a result back (even if it's an error)
       assert [{status, _sub, _response}] = results

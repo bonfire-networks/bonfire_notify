@@ -96,7 +96,7 @@ defmodule Bonfire.Notify.WebPush do
   def send_web_push(user_ids, message, opts \\ [])
       when is_list(user_ids) or is_binary(user_ids) do
     case get_subscriptions(user_ids)
-         |> flood("subscriptions for #{inspect(user_ids)}")
+         |> debug("subscriptions for #{inspect(user_ids)}")
          |> Map.values()
          |> List.flatten() do
       [] ->
@@ -115,25 +115,25 @@ defmodule Bonfire.Notify.WebPush do
 
   defp send_web_push_to_subscriptions(subscriptions, message, opts)
        when is_list(subscriptions) and subscriptions != [] do
-    flood(message, "sending push to #{length(subscriptions)} subscriptions")
+    debug(message, "sending push to #{length(subscriptions)} subscriptions")
     results = ex_nudge_module().send_notifications(subscriptions, message, opts)
 
     # Update subscription statuses based on results
     Enum.each(results, fn
       {:ok, subscription, _response} ->
-        flood(subscription.endpoint, "Push sent to subscription")
+        debug(subscription.endpoint, "Push sent to subscription")
         # Mark as successful
         update_subscription_status(subscription, :success)
 
       {:error, subscription, :subscription_expired} ->
         # Mark as expired and remove
         mark_and_remove_expired(subscription)
-        flood(subscription.endpoint, "Removed expired subscription")
+        debug(subscription.endpoint, "Removed expired subscription")
 
       {:error, subscription, reason} ->
         # Mark error but keep subscription active
         update_subscription_status(subscription, {:error, reason})
-        flood(reason, "Failed to send to #{subscription.endpoint}")
+        debug(reason, "Failed to send to #{subscription.endpoint}")
     end)
 
     results
