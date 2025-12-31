@@ -30,7 +30,8 @@ defmodule Bonfire.Notify.RuntimeConfig do
     #   private_key: System.get_env("WEB_PUSH_PRIVATE_KEY")
 
     config :ex_nudge,
-      # generate keys using ExNudge.VAPID.generate_keys()
+      # generate keys using `Bonfire.Notify.WebPush.generate_keys_env()`
+      # TODO: generate on first use if not set, and store with Bonfire.Common.Settings
       vapid_public_key: System.get_env("WEB_PUSH_PUBLIC_KEY"),
       vapid_private_key: System.get_env("WEB_PUSH_PRIVATE_KEY"),
       vapid_subject: System.get_env("WEB_PUSH_SUBJECT", "https://bonfire.cafe")
