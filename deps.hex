@@ -1,6 +1,6 @@
 ecto_sql = "~> 3.8"
 faker = "~> 0.14" # fake data generation
-exto = "~> 0.3"
+= "~> 0.3"
 gettext = "~> 0.20"
 jason = "~> 1.0"
 postgrex = ">= 0.0.0"
