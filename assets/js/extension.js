@@ -318,4 +318,175 @@ NotifyHooks.PushNotificationHook = {
   }
 };
 
+// Hook for push settings in user preferences
+// Works with PushNotificationsLive component using pushEventTo for component communication
+NotifyHooks.PushSettingsHook = {
+  async mounted() {
+    this.vapidKey = this.el.dataset.vapidKey;
+    this.swRegistration = null;
+    this.deferredPrompt = null;
+
+    // Store bound handlers for cleanup
+    this._boundHandlers = {};
+
+    // Setup PWA install handling
+    this.setupPwaInstall();
+
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      this.pushEventTo(this.el, 'push_not_supported', {});
+      return;
+    }
+
+    await this.initServiceWorker();
+    await this.checkCurrentSubscription();
+
+    this.handleEvent('request_push_permission', async (payload) => {
+      await this.requestPushPermission(payload.vapid_key);
+    });
+
+    this.handleEvent('request_push_disable', async () => {
+      await this.disablePush();
+    });
+  },
+
+  destroyed() {
+    // Clean up event listeners
+    if (this._boundHandlers.beforeinstallprompt) {
+      window.removeEventListener('beforeinstallprompt', this._boundHandlers.beforeinstallprompt);
+    }
+    if (this._boundHandlers.installClick) {
+      const installBtn = document.getElementById('pwa-install-btn');
+      if (installBtn) {
+        installBtn.removeEventListener('click', this._boundHandlers.installClick);
+      }
+    }
+    this.deferredPrompt = null;
+    this.swRegistration = null;
+  },
+
+  setupPwaInstall() {
+    const installSection = document.getElementById('pwa-install-section');
+    const installBtn = document.getElementById('pwa-install-btn');
+
+    // Store bound handler for cleanup
+    this._boundHandlers.beforeinstallprompt = (e) => {
+      e.preventDefault();
+      this.deferredPrompt = e;
+      // Show the install section
+      if (installSection) {
+        installSection.classList.remove('hidden');
+      }
+    };
+    window.addEventListener('beforeinstallprompt', this._boundHandlers.beforeinstallprompt);
+
+    // Handle install button click
+    if (installBtn) {
+      this._boundHandlers.installClick = async () => {
+        if (!this.deferredPrompt) return;
+
+        this.deferredPrompt.prompt();
+        const { outcome } = await this.deferredPrompt.userChoice;
+
+        if (outcome === 'accepted') {
+          if (installSection) {
+            installSection.classList.add('hidden');
+          }
+        }
+        this.deferredPrompt = null;
+      };
+      installBtn.addEventListener('click', this._boundHandlers.installClick);
+    }
+
+    // Hide install section if already installed as PWA
+    if (window.matchMedia('(display-mode: standalone)').matches) {
+      if (installSection) {
+        installSection.classList.add('hidden');
+      }
+    }
+  },
+
+  async initServiceWorker() {
+    try {
+      this.swRegistration = await navigator.serviceWorker.register('/pwabuilder-sw.js', { scope: '/' });
+      await navigator.serviceWorker.ready;
+    } catch (error) {
+      console.error('PushSettings: Service worker init failed:', error);
+    }
+  },
+
+  async checkCurrentSubscription() {
+    if (!this.swRegistration) return;
+
+    try {
+      const subscription = await this.swRegistration.pushManager.getSubscription();
+      if (subscription) {
+        this.pushEventTo(this.el, 'check_subscription', {
+          endpoint: subscription.endpoint
+        });
+      }
+    } catch (error) {
+      console.error('PushSettings: Error checking subscription:', error);
+    }
+  },
+
+  async requestPushPermission(vapidKey) {
+    try {
+      if (!this.swRegistration) {
+        await this.initServiceWorker();
+      }
+
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        this.pushEventTo(this.el, 'push_subscription_error', { error: 'Permission denied' });
+        return;
+      }
+
+      const applicationServerKey = this.urlBase64ToUint8Array(vapidKey);
+
+      const existingSub = await this.swRegistration.pushManager.getSubscription();
+      if (existingSub) {
+        await existingSub.unsubscribe();
+      }
+
+      const subscription = await this.swRegistration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: applicationServerKey
+      });
+
+      this.pushEventTo(this.el, 'push_subscription_created', {
+        subscription: subscription.toJSON()
+      });
+
+    } catch (error) {
+      console.error('PushSettings: Subscription failed:', error);
+      this.pushEventTo(this.el, 'push_subscription_error', { error: error.message });
+    }
+  },
+
+  async disablePush() {
+    try {
+      if (!this.swRegistration) return;
+
+      const subscription = await this.swRegistration.pushManager.getSubscription();
+      if (subscription) {
+        const endpoint = subscription.endpoint;
+        await subscription.unsubscribe();
+        this.pushEventTo(this.el, 'push_subscription_disabled', { endpoint: endpoint });
+      }
+    } catch (error) {
+      console.error('PushSettings: Error disabling push:', error);
+      this.pushEventTo(this.el, 'push_subscription_error', { error: error.message });
+    }
+  },
+
+  urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding)
+      .replace(/-/g, '+')
+      .replace(/_/g, '/');
+    const rawData = window.atob(base64);
+    return new Uint8Array([...rawData].map(char => char.charCodeAt(0)));
+  }
+};
+
 export { NotifyHooks };

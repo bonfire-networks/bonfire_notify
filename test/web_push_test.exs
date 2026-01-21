@@ -135,4 +135,51 @@ defmodule Bonfire.Notify.WebPushTest do
       assert %{} = WebPush.get_subscriptions([user.id])
     end
   end
+
+  describe "resolve_feed_ids_to_user_ids/1" do
+    test "resolves notification feed IDs to user IDs" do
+      user = fake_user!()
+
+      # Get the user's notification feed ID
+      user_with_character = repo().preload(user, :character)
+      notifications_id = user_with_character.character.notifications_id
+
+      # Skip if no notifications_id (shouldn't happen with fake_user but just in case)
+      if notifications_id do
+        resolved_ids = WebPush.resolve_feed_ids_to_user_ids([notifications_id])
+        assert user.id in resolved_ids
+      end
+    end
+
+    test "returns empty list for non-existent feed IDs" do
+      fake_feed_id = Needle.ULID.generate()
+      assert [] = WebPush.resolve_feed_ids_to_user_ids([fake_feed_id])
+    end
+  end
+
+  describe "send_web_push/3 with feed IDs" do
+    test "finds subscriptions when given notification feed IDs instead of user IDs" do
+      user = fake_user!()
+
+      # Create a subscription for the user
+      {:ok, _} = WebPush.subscribe(user.id, @valid_data)
+
+      # Get the user's notification feed ID
+      user_with_character = repo().preload(user, :character)
+      notifications_id = user_with_character.character.notifications_id
+
+      if notifications_id do
+        message = WebPush.format_push_message("Test", "Message")
+
+        # This should resolve the feed ID to the user ID and find the subscription
+        # It will return an error from ExNudge since we're using a test endpoint,
+        # but that's expected - we're testing the resolution logic
+        result = WebPush.send_web_push([notifications_id], message)
+
+        # Should not be :no_subscriptions since we have a subscription
+        # (it might be an error from the actual push, but that's OK)
+        refute result == {:error, :no_subscriptions}
+      end
+    end
+  end
 end

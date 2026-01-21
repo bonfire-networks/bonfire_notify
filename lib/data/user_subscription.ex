@@ -10,6 +10,16 @@ defmodule Bonfire.Notify.UserSubscription do
   @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary_id
 
+  @default_alerts %{
+    "follow" => true,
+    "favourite" => true,
+    "reblog" => true,
+    "mention" => true,
+    "poll" => true,
+    "status" => false,
+    "update" => false
+  }
+
   schema "bonfire_notify_web_push_subscription" do
     field(:user_id, :binary)
     field(:endpoint, :string)
@@ -24,15 +34,30 @@ defmodule Bonfire.Notify.UserSubscription do
     field(:last_used_at, :utc_datetime)
     field(:last_status, Ecto.Enum, values: [:success, :error, :expired, :pending])
     field(:last_error, :string)
+
+    # Mastodon-compatible push subscription fields
+    field(:alerts, :map, default: @default_alerts)
+    field(:policy, :string, default: "all")
   end
 
   @doc """
   Creates a changeset for a subscription.
+
+  Note: `user_id` must be set explicitly on the struct before calling changeset,
+  or passed as a separate parameter, as it's not included in cast for security.
   """
-  def changeset(struct, attrs \\ %{}) do
+  def changeset(struct, attrs \\ %{})
+
+  def changeset(struct, attrs) when is_map(attrs) do
+    # Set user_id explicitly if provided in attrs (security: not via cast)
+    struct =
+      case Map.get(attrs, :user_id) || Map.get(attrs, "user_id") do
+        nil -> struct
+        user_id -> %{struct | user_id: user_id}
+      end
+
     struct
     |> cast(attrs, [
-      :user_id,
       :endpoint,
       :auth_key,
       :p256dh_key,
@@ -42,16 +67,31 @@ defmodule Bonfire.Notify.UserSubscription do
       :device_name,
       :last_used_at,
       :last_status,
-      :last_error
+      :last_error,
+      :alerts,
+      :policy
     ])
-    |> validate_required([:user_id, :endpoint, :auth_key, :p256dh_key])
+    |> validate_required([:endpoint, :auth_key, :p256dh_key])
+    |> validate_user_id()
     |> validate_inclusion(:last_status, [:success, :error, :expired, :pending])
+    |> validate_inclusion(:policy, ["all", "follower", "followed", "none"])
     |> unique_constraint(:endpoint)
+  end
+
+  defp validate_user_id(changeset) do
+    case Ecto.Changeset.get_field(changeset, :user_id) do
+      nil -> add_error(changeset, :user_id, "can't be blank")
+      _ -> changeset
+    end
   end
 
   @doc """
   Parses browser subscription data into the format expected by our schema.
   Returns an error tuple if the data structure is invalid.
+
+  Supports both standard browser format and Mastodon API format:
+  - Browser: `%{"endpoint" => "...", "keys" => %{"p256dh" => "...", "auth" => "..."}}`
+  - Mastodon: `%{"subscription" => %{"endpoint" => "...", "keys" => %{...}}, "data" => %{"alerts" => %{...}, "policy" => "..."}}`
   """
   def parse_subscription_data(%{
         "endpoint" => endpoint,
@@ -65,10 +105,36 @@ defmodule Bonfire.Notify.UserSubscription do
      }}
   end
 
+  # Mastodon API format: subscription nested under "subscription" key with separate "data" for alerts/policy
+  def parse_subscription_data(
+        %{
+          "subscription" => %{
+            "endpoint" => endpoint,
+            "keys" => %{"p256dh" => p256dh, "auth" => auth}
+          }
+        } = params
+      ) do
+    data = params["data"] || %{}
+
+    {:ok,
+     %{
+       endpoint: endpoint,
+       p256dh_key: p256dh,
+       auth_key: auth,
+       alerts: data["alerts"] || default_alerts(),
+       policy: data["policy"] || "all"
+     }}
+  end
+
   def parse_subscription_data(invalid_data) do
     error(invalid_data, "invalid_subscription_data")
     {:error, :invalid_subscription_data}
   end
+
+  @doc """
+  Returns the default alerts configuration.
+  """
+  def default_alerts, do: @default_alerts
 
   @doc """
   Converts a UserSubscription record to ExNudge.Subscription format.

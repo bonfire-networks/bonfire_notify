@@ -7,8 +7,6 @@ defmodule Bonfire.Notify.WebPush do
   import Ecto.Query
   import Bonfire.Common.Config, only: [repo: 0]
 
-  alias Ecto.Changeset
-  alias Bonfire.Notify.ExNudge.PushService
   alias Bonfire.Notify.UserSubscription
 
   @doc """
@@ -92,19 +90,59 @@ defmodule Bonfire.Notify.WebPush do
   @doc """
   Sends a web push notification to all subscriptions for a user or multiple users.
   Uses ExNudge to handle the actual sending.
+
+  The IDs can be either user IDs or notification feed IDs - both are resolved
+  to find matching push subscriptions.
   """
   def send_web_push(user_ids, message, opts \\ [])
       when is_list(user_ids) or is_binary(user_ids) do
-    case get_subscriptions(user_ids)
-         |> debug("subscriptions for #{inspect(user_ids)}")
-         |> Map.values()
-         |> List.flatten() do
+    ids = List.wrap(user_ids)
+
+    # First try direct lookup by user_id
+    direct_subscriptions =
+      get_subscriptions(ids)
+      |> Map.values()
+      |> List.flatten()
+
+    subscriptions =
+      if direct_subscriptions != [] do
+        debug(direct_subscriptions, "found subscriptions by user_id")
+        direct_subscriptions
+      else
+        # If no direct matches, try resolving as notification feed IDs
+        resolved_user_ids = resolve_feed_ids_to_user_ids(ids)
+        debug(resolved_user_ids, "resolved feed IDs to user IDs")
+
+        if resolved_user_ids != [] do
+          get_subscriptions(resolved_user_ids)
+          |> Map.values()
+          |> List.flatten()
+        else
+          []
+        end
+      end
+
+    case subscriptions do
       [] ->
         {:error, :no_subscriptions}
 
       subscriptions ->
         send_web_push_to_subscriptions(subscriptions, message, opts)
     end
+  end
+
+  @doc """
+  Resolves notification feed IDs to user IDs by querying the Character table.
+  This handles the case where notify_feed_ids from live_push are passed instead of user IDs.
+  """
+  def resolve_feed_ids_to_user_ids(feed_ids) when is_list(feed_ids) do
+    # Query Character table where notifications_id matches any of the feed_ids
+    # The character ID is the same as the user ID in Bonfire's Needle schema
+    from(c in Bonfire.Data.Identity.Character,
+      where: c.notifications_id in ^feed_ids,
+      select: c.id
+    )
+    |> repo().many()
   end
 
   @doc """
@@ -146,48 +184,30 @@ defmodule Bonfire.Notify.WebPush do
 
   defp update_subscription_status(%ExNudge.Subscription{endpoint: endpoint}, :success) do
     from(s in UserSubscription, where: s.endpoint == ^endpoint)
-    |> repo().one()
-    |> case do
-      nil ->
-        :ok
-
-      subscription ->
-        subscription
-        |> UserSubscription.mark_success()
-        |> repo().update()
-    end
+    |> repo().update_all(
+      set: [
+        last_status: :success,
+        last_used_at: DateTime.utc_now(),
+        last_error: nil,
+        active: true
+      ]
+    )
   end
 
   defp update_subscription_status(%ExNudge.Subscription{endpoint: endpoint}, {:error, reason}) do
     from(s in UserSubscription, where: s.endpoint == ^endpoint)
-    |> repo().one()
-    |> case do
-      nil ->
-        :ok
-
-      subscription ->
-        subscription
-        |> UserSubscription.mark_error(reason)
-        |> repo().update()
-    end
+    |> repo().update_all(
+      set: [
+        last_status: :error,
+        last_used_at: DateTime.utc_now(),
+        last_error: inspect(reason)
+      ]
+    )
   end
 
   defp mark_and_remove_expired(%ExNudge.Subscription{endpoint: endpoint}) do
-    from(s in UserSubscription, where: s.endpoint == ^endpoint)
-    |> repo().one()
-    |> case do
-      nil ->
-        :ok
-
-      subscription ->
-        # Mark as expired first for historical tracking
-        subscription
-        |> UserSubscription.mark_expired()
-        |> repo().update()
-
-        # Then delete
-        remove_subscription_by_endpoint(endpoint)
-    end
+    # Just delete - expired subscriptions are useless
+    remove_subscription_by_endpoint(endpoint)
   end
 
   def remove_device(device_id) do

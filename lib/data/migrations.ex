@@ -19,6 +19,21 @@ defmodule Bonfire.Notify.Migrations do
       add(:last_used_at, :utc_datetime)
       add(:last_status, :string)
       add(:last_error, :text)
+
+      # Mastodon-compatible push subscription fields
+      add(:alerts, :map,
+        default: %{
+          "follow" => true,
+          "favourite" => true,
+          "reblog" => true,
+          "mention" => true,
+          "poll" => true,
+          "status" => false,
+          "update" => false
+        }
+      )
+
+      add(:policy, :string, default: "all")
     end
 
     create(unique_index(:bonfire_notify_web_push_subscription, [:endpoint]))

@@ -15,6 +15,7 @@ defmodule Bonfire.Notify.RuntimeConfig do
 
     # config :bonfire_notify,
     #   modularity: :disabled
+    config :bonfire_notify, modularity: nil
 
     # Web push
     config :bonfire_notify, Bonfire.Notify.WebPush,
