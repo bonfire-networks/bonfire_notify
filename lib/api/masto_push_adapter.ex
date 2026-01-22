@@ -39,7 +39,7 @@ defmodule Bonfire.Notify.API.MastoPushAdapter do
       case UserSubscription.parse_subscription_data(params) do
         {:ok, parsed_attrs} ->
           attrs = maybe_add_device_info(parsed_attrs, conn)
-          existing = get_subscription_by_endpoint(attrs.endpoint)
+          existing = UserSubscription.get_subscription_by_endpoint(attrs.endpoint)
 
           upsert_subscription(existing, attrs, id(current_user), conn)
 
@@ -58,7 +58,7 @@ defmodule Bonfire.Notify.API.MastoPushAdapter do
     RestAdapter.with_current_user(conn, fn current_user ->
       user_id = id(current_user)
 
-      case get_user_subscription(user_id) do
+      case UserSubscription.get(user_id) do
         nil ->
           RestAdapter.error_fn({:error, :not_found}, conn)
 
@@ -87,7 +87,7 @@ defmodule Bonfire.Notify.API.MastoPushAdapter do
     RestAdapter.with_current_user(conn, fn current_user ->
       user_id = id(current_user)
 
-      case get_user_subscription(user_id) do
+      case UserSubscription.get(user_id) do
         nil ->
           RestAdapter.error_fn({:error, :not_found}, conn)
 
@@ -99,7 +99,7 @@ defmodule Bonfire.Notify.API.MastoPushAdapter do
             |> maybe_put_alerts(data["alerts"], subscription.alerts)
             |> maybe_put_policy(data["policy"])
 
-          case update_subscription(subscription, update_attrs) do
+          case UserSubscription.update_subscription(subscription, update_attrs) do
             {:ok, updated} ->
               RestAdapter.json(conn, format_response(updated))
 
@@ -119,7 +119,7 @@ defmodule Bonfire.Notify.API.MastoPushAdapter do
     RestAdapter.with_current_user(conn, fn current_user ->
       user_id = id(current_user)
 
-      case get_user_subscription(user_id) do
+      case UserSubscription.get(user_id) do
         nil ->
           RestAdapter.error_fn({:error, :not_found}, conn)
 
@@ -139,31 +139,9 @@ defmodule Bonfire.Notify.API.MastoPushAdapter do
 
   # Private helpers
 
-  defp get_user_subscription(user_id) do
-    from(s in UserSubscription,
-      where: s.user_id == ^user_id and s.active == true,
-      order_by: [desc: s.last_used_at],
-      limit: 1
-    )
-    |> repo().one()
-  end
-
-  defp get_subscription_by_endpoint(endpoint) do
-    from(s in UserSubscription, where: s.endpoint == ^endpoint)
-    |> repo().one()
-  end
-
-  defp upsert_subscription(nil, attrs, user_id, conn) do
-    %UserSubscription{user_id: user_id}
-    |> UserSubscription.changeset(attrs)
-    |> repo().insert()
-    |> respond_with_subscription(conn)
-  end
-
-  defp upsert_subscription(existing, attrs, _user_id, conn) do
+  defp upsert_subscription(existing, attrs, user_id, conn) do
     existing
-    |> UserSubscription.changeset(attrs)
-    |> repo().update()
+    |> UserSubscription.maybe_upsert_subscription(attrs, user_id)
     |> respond_with_subscription(conn)
   end
 
@@ -173,12 +151,6 @@ defmodule Bonfire.Notify.API.MastoPushAdapter do
 
   defp respond_with_subscription({:error, changeset}, conn) do
     RestAdapter.error_fn({:error, changeset_error(changeset)}, conn)
-  end
-
-  defp update_subscription(subscription, attrs) do
-    subscription
-    |> UserSubscription.changeset(attrs)
-    |> repo().update()
   end
 
   defp maybe_add_device_info(attrs, conn) do

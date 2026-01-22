@@ -106,10 +106,12 @@ defmodule Bonfire.Notify.WebPush do
 
     subscriptions =
       if direct_subscriptions != [] do
+        # FIXME: what if some ids matched and others didn't?
         debug(direct_subscriptions, "found subscriptions by user_id")
         direct_subscriptions
       else
         # If no direct matches, try resolving as notification feed IDs
+        # FIXME: we shouldn't simply notify all users that feed IDs belong to, instead taking into alerts categories somehow
         resolved_user_ids = resolve_feed_ids_to_user_ids(ids)
         debug(resolved_user_ids, "resolved feed IDs to user IDs")
 

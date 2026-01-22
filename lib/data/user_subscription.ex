@@ -6,6 +6,9 @@ defmodule Bonfire.Notify.UserSubscription do
   use Ecto.Schema
   import Untangle
   import Ecto.Changeset
+  import Ecto.Query
+  alias Bonfire.Notify.UserSubscription
+  import Bonfire.Common.Config, only: [repo: 0]
 
   @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary_id
@@ -192,5 +195,35 @@ defmodule Bonfire.Notify.UserSubscription do
       last_status: :expired,
       last_used_at: DateTime.utc_now()
     })
+  end
+
+  def get(user_id) do
+    from(s in UserSubscription,
+      where: s.user_id == ^user_id and s.active == true,
+      order_by: [desc: s.last_used_at],
+      limit: 1
+    )
+    |> repo().one()
+  end
+
+  def get_subscription_by_endpoint(endpoint) do
+    from(s in UserSubscription, where: s.endpoint == ^endpoint)
+    |> repo().one()
+  end
+
+  def update_subscription(subscription, attrs) do
+    subscription
+    |> UserSubscription.changeset(attrs)
+    |> repo().update()
+  end
+
+  defp maybe_upsert_subscription(nil, attrs, user_id) do
+    %UserSubscription{user_id: user_id}
+    |> UserSubscription.changeset(attrs)
+    |> repo().insert()
+  end
+
+  defp maybe_upsert_subscription(existing, attrs, _user_id) do
+    update_subscription(existing, attrs)
   end
 end

@@ -12,6 +12,12 @@ defmodule Bonfire.Notify do
 
   alias Bonfire.Notify.WebPush
 
+  declare_extension(
+    "Notifications",
+    icon: "ph:device-mobile",
+    description: l("Manage your notification settings and registered devices")
+  )
+
   def vapid_config do
     Application.get_env(:ex_nudge, :vapid_details, []) ||
       Application.get_env(:web_push_encryption, :vapid_details, [])

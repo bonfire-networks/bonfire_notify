@@ -1,6 +1,8 @@
 defmodule Bonfire.Notify.PushNotifyLive do
   use Bonfire.UI.Common.Web, :stateless_component
 
+  # TODO: deduplicate with `Bonfire.Notify.Settings.PushNotificationsLive` ? or should a minimal version of this be included in `Bonfire.UI.Common.NotificationLive` to just prompt to enable push subscription?
+
   # Note: All event handling is done by parent LiveView using Bonfire.Notify.LiveHandler
   # This component is stateless and just renders the UI
 
