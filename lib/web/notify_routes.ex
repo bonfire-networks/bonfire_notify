@@ -24,7 +24,7 @@ defmodule Bonfire.Notify.Web.Routes do
         pipe_through(:browser)
         pipe_through(:user_required)
 
-        get "/api/v1-bonfire/streaming", Bonfire.Notify.Web.MastoStreamingController, :stream
+        get "/api/v1-bonfire/streaming", Bonfire.Notify.Web.StreamingController, :stream
       end
 
       # pages only admins can view

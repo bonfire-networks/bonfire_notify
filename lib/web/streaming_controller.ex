@@ -1,4 +1,4 @@
-defmodule Bonfire.Notify.Web.MastoStreamingController do
+defmodule Bonfire.Notify.Web.StreamingController do
   @moduledoc """
   SSE streaming endpoint.
 
@@ -58,6 +58,9 @@ defmodule Bonfire.Notify.Web.MastoStreamingController do
 
   defp stream_loop(conn) do
     receive do
+      :stop_streaming ->
+        conn
+
       {Bonfire.UI.Common.Notifications, %{} = data} ->
         event =
           Jason.encode!(%{
