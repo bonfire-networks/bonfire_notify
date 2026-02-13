@@ -1,10 +1,10 @@
-<div class="p-4 cursor-pointer">
-  <div class="flex items-center justify-between gap-4">
+<div class="">
+  <!-- <div class="flex items-center justify-between gap-4">
     <div class="flex flex-col gap-1">
       <div class="text-sm font-medium">{l("Push notifications")}</div>
       <div class="text-sm font-light text-base-content/70">{l("Receive notifications on your devices")}</div>
     </div>
-  </div>
+  </div> -->
   <div class="pt-2">
     <!-- <StatefulComponent
           id="push-notifications-settings"
@@ -81,18 +81,18 @@
               {#case {browser_from_endpoint(sub.endpoint), is_current_device?(sub, @current_endpoint)}}
                 {#match {browser, is_current}}
                   <li class={
-                    "flex items-center justify-between p-2 rounded-lg",
+                    "flex items-center justify-between py-2 rounded-lg",
                     "bg-primary/10": is_current,
                     "hover:bg-base-200/50": !is_current
                   }>
                     <div class="flex items-center gap-3">
                       {!-- TODO: use :platform from struct if available? --}
                       <span class="text-base-content/50">
-                        <#Icon :if={browser == "Firefox"} iconify="ph:firefox-logo" class="size-5" />
+                        <!-- <#Icon :if={browser == "Firefox"} iconify="ph:firefox-logo" class="size-5" />
                         <#Icon :if={browser == "Chrome"} iconify="ph:google-chrome-logo" class="size-5" />
                         <#Icon :if={browser == "Safari"} iconify="ph:apple-logo" class="size-5" />
-                        <#Icon :if={browser == "Edge"} iconify="ph:microsoft-edge-logo" class="size-5" />
-                        <#Icon :if={browser == "Browser"} iconify="ph:globe" class="size-5" />
+                        <#Icon :if={browser == "Edge"} iconify="ph:microsoft-edge-logo" class="size-5" /> -->
+                        <#Icon iconify="ph:globe-duotone" class="size-5" />
                       </span>
                       <div class="flex flex-col">
                         <span class="text-sm font-medium flex items-center gap-2">
