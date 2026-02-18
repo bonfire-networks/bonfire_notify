@@ -28,6 +28,7 @@ defmodule Bonfire.Notify.Web.StreamingController do
   """
   def stream(conn, _params) do
     current_user = conn.assigns[:current_user]
+    flood(Enums.id(current_user), "[SSE] Stream requested by user")
 
     conn =
       conn
@@ -40,6 +41,10 @@ defmodule Bonfire.Notify.Web.StreamingController do
   end
 
   defp subscribe_and_stream(conn, current_user) do
+    current_user =
+      current_user
+      |> repo().maybe_preload(:character)
+
     feed_id =
       Bonfire.Common.Utils.maybe_apply(
         Bonfire.Social.Feeds,
@@ -47,11 +52,24 @@ defmodule Bonfire.Notify.Web.StreamingController do
         [:notifications, current_user]
       )
 
-    if feed_id do
-      topic = to_string(feed_id)
-      Phoenix.PubSub.subscribe(Bonfire.Common.PubSub, topic)
+    messages_feed_id =
+      Bonfire.Common.Utils.maybe_apply(
+        Bonfire.Social.Feeds,
+        :my_feed_id,
+        [:inbox, current_user]
+      )
+
+    if feed_id || messages_feed_id do
+      flood([feed_id, messages_feed_id], "[SSE] Subscribing to PubSub topic")
+
+      if feed_id, do: Phoenix.PubSub.subscribe(Bonfire.Common.PubSub, to_string(feed_id))
+
+      if messages_feed_id,
+        do: Phoenix.PubSub.subscribe(Bonfire.Common.PubSub, to_string(messages_feed_id))
+
       stream_loop(conn)
     else
+      err("[SSE] Could not resolve notification feed_id for user, closing")
       conn
     end
   end
@@ -59,9 +77,12 @@ defmodule Bonfire.Notify.Web.StreamingController do
   defp stream_loop(conn) do
     receive do
       :stop_streaming ->
+        flood("[SSE] Received :stop_streaming, closing connection")
         conn
 
       {Bonfire.UI.Common.Notifications, %{} = data} ->
+        flood(data[:title] || data[:message], "[SSE] Forwarding notification")
+
         event =
           Jason.encode!(%{
             title: data[:title],
@@ -71,22 +92,42 @@ defmodule Bonfire.Notify.Web.StreamingController do
           })
 
         case Plug.Conn.chunk(conn, "event: notification\ndata: #{event}\n\n") do
-          {:ok, conn} -> stream_loop(conn)
-          {:error, :closed} -> conn
+          {:ok, conn} ->
+            stream_loop(conn)
+
+          {:error, :closed} ->
+            flood("[SSE] Client disconnected while sending notification")
+            conn
         end
 
       {:new_message, %{} = data} ->
+        flood(data[:thread_id], "[SSE] Forwarding message event")
         event = Jason.encode!(%{type: "message", thread_id: data[:thread_id]})
 
         case Plug.Conn.chunk(conn, "event: message\ndata: #{event}\n\n") do
-          {:ok, conn} -> stream_loop(conn)
-          {:error, :closed} -> conn
+          {:ok, conn} ->
+            stream_loop(conn)
+
+          {:error, :closed} ->
+            flood("[SSE] Client disconnected while sending message")
+            conn
         end
+
+      {:plug_conn, :sent} ->
+        stream_loop(conn)
+
+      other ->
+        err(other, "[SSE] Ignoring unhandled message")
+        stream_loop(conn)
     after
       @heartbeat_interval_ms ->
         case Plug.Conn.chunk(conn, ": heartbeat\n\n") do
-          {:ok, conn} -> stream_loop(conn)
-          {:error, :closed} -> conn
+          {:ok, conn} ->
+            stream_loop(conn)
+
+          {:error, :closed} ->
+            flood("[SSE] Client disconnected during heartbeat")
+            conn
         end
     end
   end

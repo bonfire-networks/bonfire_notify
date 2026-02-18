@@ -23,8 +23,13 @@ defmodule Bonfire.Notify.Web.Routes do
       scope "/", Bonfire.Notify.Web do
         pipe_through(:browser)
         pipe_through(:user_required)
+      end
 
-        get "/api/v1-bonfire/streaming", Bonfire.Notify.Web.StreamingController, :stream
+      # SSE streaming (no :browser or :basic_json pipeline — they restrict Accept headers)
+      scope "/api/v1-bonfire", Bonfire.Notify.Web do
+        pipe_through([:load_current_auth, :load_authorization])
+
+        get "/streaming", StreamingController, :stream
       end
 
       # pages only admins can view
