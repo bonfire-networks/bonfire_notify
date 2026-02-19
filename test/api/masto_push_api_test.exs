@@ -147,7 +147,7 @@ defmodule Bonfire.Notify.Web.MastoPushApiTest do
         |> post("/api/v1/push/subscription", subscription_params())
         |> json_response(401)
 
-      assert response["error"] =~ "Unauthorized" or response["error"] =~ "invalid"
+      assert response["error"] =~ "You need to login first." or response["error"] =~ "invalid"
     end
 
     test "returns error for invalid subscription data", %{conn: conn} do
@@ -206,7 +206,7 @@ defmodule Bonfire.Notify.Web.MastoPushApiTest do
         |> get("/api/v1/push/subscription")
         |> json_response(401)
 
-      assert response["error"] =~ "Unauthorized" or response["error"] =~ "invalid"
+      assert response["error"] =~ "You need to login first." or response["error"] =~ "invalid"
     end
   end
 
@@ -249,7 +249,7 @@ defmodule Bonfire.Notify.Web.MastoPushApiTest do
         |> put("/api/v1/push/subscription", %{"data" => %{"policy" => "all"}})
         |> json_response(401)
 
-      assert response["error"] =~ "Unauthorized" or response["error"] =~ "invalid"
+      assert response["error"] =~ "You need to login first." or response["error"] =~ "invalid"
     end
   end
 
@@ -284,7 +284,7 @@ defmodule Bonfire.Notify.Web.MastoPushApiTest do
         |> delete("/api/v1/push/subscription")
         |> json_response(401)
 
-      assert response["error"] =~ "Unauthorized" or response["error"] =~ "invalid"
+      assert response["error"] =~ "You need to login first." or response["error"] =~ "invalid"
     end
   end
 end
