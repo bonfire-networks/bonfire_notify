@@ -97,6 +97,7 @@ defmodule Bonfire.Notify.Web.MastoPushApiTest do
       assert Map.has_key?(response, "id")
       assert response["endpoint"] == params["subscription"]["endpoint"]
       assert Map.has_key?(response, "server_key")
+      assert response["standard"] == false
       assert response["alerts"]["mention"] == true
       assert response["policy"] == "all"
     end
@@ -158,6 +159,38 @@ defmodule Bonfire.Notify.Web.MastoPushApiTest do
 
       assert Map.has_key?(response, "error")
     end
+
+    test "includes new alert types in defaults", %{conn: conn} do
+      response =
+        conn
+        |> post("/api/v1/push/subscription", subscription_params())
+        |> json_response(200)
+
+      assert response["alerts"]["follow_request"] == true
+      assert response["alerts"]["admin.sign_up"] == false
+      assert response["alerts"]["admin.report"] == false
+    end
+
+    test "allows setting new alert types explicitly", %{conn: conn} do
+      params =
+        subscription_params(
+          alerts: %{
+            "mention" => true,
+            "follow_request" => false,
+            "admin.sign_up" => true,
+            "admin.report" => true
+          }
+        )
+
+      response =
+        conn
+        |> post("/api/v1/push/subscription", params)
+        |> json_response(200)
+
+      assert response["alerts"]["follow_request"] == false
+      assert response["alerts"]["admin.sign_up"] == true
+      assert response["alerts"]["admin.report"] == true
+    end
   end
 
   describe "GET /api/v1/push/subscription" do
@@ -187,6 +220,7 @@ defmodule Bonfire.Notify.Web.MastoPushApiTest do
 
       assert response["endpoint"] == created["endpoint"]
       assert Map.has_key?(response, "server_key")
+      assert response["standard"] == false
       assert Map.has_key?(response, "alerts")
       assert Map.has_key?(response, "policy")
     end

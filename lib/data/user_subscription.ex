@@ -15,12 +15,15 @@ defmodule Bonfire.Notify.UserSubscription do
 
   @default_alerts %{
     "follow" => true,
+    "follow_request" => true,
     "favourite" => true,
     "reblog" => true,
     "mention" => true,
     "poll" => true,
     "status" => false,
-    "update" => false
+    "update" => false,
+    "admin.sign_up" => false,
+    "admin.report" => false
   }
 
   schema "bonfire_notify_web_push_subscription" do
@@ -124,7 +127,7 @@ defmodule Bonfire.Notify.UserSubscription do
        endpoint: endpoint,
        p256dh_key: p256dh,
        auth_key: auth,
-       alerts: data["alerts"] || default_alerts(),
+       alerts: Map.merge(default_alerts(), data["alerts"] || %{}),
        policy: data["policy"] || "all"
      }}
   end
@@ -197,6 +200,14 @@ defmodule Bonfire.Notify.UserSubscription do
     })
   end
 
+  @doc """
+  Deletes all subscriptions for a given user.
+  """
+  def delete_all_for_user(user_id) do
+    from(s in UserSubscription, where: s.user_id == ^user_id)
+    |> repo().delete_all()
+  end
+
   def get(user_id) do
     from(s in UserSubscription,
       where: s.user_id == ^user_id and s.active == true,
@@ -217,13 +228,17 @@ defmodule Bonfire.Notify.UserSubscription do
     |> repo().update()
   end
 
-  defp maybe_upsert_subscription(nil, attrs, user_id) do
+  @doc """
+  Creates or updates a subscription. If `existing` is nil, inserts a new one
+  for the given `user_id`; otherwise updates the existing record.
+  """
+  def maybe_upsert_subscription(nil, attrs, user_id) do
     %UserSubscription{user_id: user_id}
     |> UserSubscription.changeset(attrs)
     |> repo().insert()
   end
 
-  defp maybe_upsert_subscription(existing, attrs, _user_id) do
+  def maybe_upsert_subscription(existing, attrs, _user_id) do
     update_subscription(existing, attrs)
   end
 end

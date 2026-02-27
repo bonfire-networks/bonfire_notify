@@ -20,6 +20,17 @@ defmodule Bonfire.Notify.Web.StreamingController do
   @heartbeat_interval_ms 30_000
 
   @doc """
+  Health check for the streaming service.
+
+  Returns plain text "OK" with 200 status, as per Mastodon streaming API spec.
+  """
+  def health(conn, _params) do
+    conn
+    |> put_resp_content_type("text/plain")
+    |> send_resp(200, "OK")
+  end
+
+  @doc """
   Initiates an SSE stream for the authenticated user's notifications.
 
   Sets appropriate headers for SSE (`text/event-stream`, no caching,

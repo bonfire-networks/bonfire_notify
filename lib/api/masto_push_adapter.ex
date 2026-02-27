@@ -39,9 +39,15 @@ defmodule Bonfire.Notify.API.MastoPushAdapter do
       case UserSubscription.parse_subscription_data(params) do
         {:ok, parsed_attrs} ->
           attrs = maybe_add_device_info(parsed_attrs, conn)
-          existing = UserSubscription.get_subscription_by_endpoint(attrs.endpoint)
+          user_id = id(current_user)
 
-          upsert_subscription(existing, attrs, id(current_user), conn)
+          # Per Mastodon spec: creating a new subscription replaces the old one
+          UserSubscription.delete_all_for_user(user_id)
+
+          %UserSubscription{user_id: user_id}
+          |> UserSubscription.changeset(attrs)
+          |> repo().insert()
+          |> respond_with_subscription(conn)
 
         {:error, _reason} ->
           RestAdapter.error_fn({:error, "Invalid subscription data"}, conn)
@@ -119,31 +125,16 @@ defmodule Bonfire.Notify.API.MastoPushAdapter do
     RestAdapter.with_current_user(conn, fn current_user ->
       user_id = id(current_user)
 
-      case UserSubscription.get(user_id) do
-        nil ->
-          RestAdapter.error_fn({:error, :not_found}, conn)
+      # Delete if exists, return 200 regardless (per Mastodon spec)
+      UserSubscription.delete_all_for_user(user_id)
 
-        subscription ->
-          case repo().delete(subscription) do
-            {:ok, _} ->
-              conn
-              |> Plug.Conn.put_resp_content_type("application/json")
-              |> Plug.Conn.send_resp(200, "{}")
-
-            {:error, reason} ->
-              RestAdapter.error_fn({:error, reason}, conn)
-          end
-      end
+      conn
+      |> Plug.Conn.put_resp_content_type("application/json")
+      |> Plug.Conn.send_resp(200, "{}")
     end)
   end
 
   # Private helpers
-
-  defp upsert_subscription(existing, attrs, user_id, conn) do
-    existing
-    |> UserSubscription.maybe_upsert_subscription(attrs, user_id)
-    |> respond_with_subscription(conn)
-  end
 
   defp respond_with_subscription({:ok, subscription}, conn) do
     RestAdapter.json(conn, format_response(subscription))
@@ -211,6 +202,7 @@ defmodule Bonfire.Notify.API.MastoPushAdapter do
     %{
       "id" => subscription.id,
       "endpoint" => subscription.endpoint,
+      "standard" => false,
       "server_key" => vapid_public_key(),
       "alerts" => subscription.alerts || UserSubscription.default_alerts(),
       "policy" => subscription.policy || "all"

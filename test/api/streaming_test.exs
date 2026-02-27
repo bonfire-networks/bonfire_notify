@@ -67,6 +67,44 @@ defmodule Bonfire.Notify.Web.StreamingControllerTest do
     to_string(feed_id)
   end
 
+  describe "GET /api/v1/streaming/health" do
+    test "returns 200 OK as plain text" do
+      response =
+        Phoenix.ConnTest.build_conn(:get, "/api/v1/streaming/health")
+        |> Bonfire.Notify.Web.StreamingController.health(%{})
+
+      assert response.status == 200
+      assert response.resp_body == "OK"
+
+      assert Plug.Conn.get_resp_header(response, "content-type")
+             |> Enum.any?(&(&1 =~ "text/plain"))
+    end
+  end
+
+  describe "GET /api/v1/streaming (standard Mastodon path)" do
+    test "streams SSE events on the standard path", %{me: me} do
+      conn =
+        Phoenix.ConnTest.build_conn(:get, "/api/v1/streaming")
+        |> Plug.Conn.assign(:current_user, me)
+
+      task =
+        Task.async(fn ->
+          StreamingController.stream(conn, %{})
+        end)
+
+      assert_receive {:plug_conn, :sent}, 2_000
+
+      send(task.pid, :stop_streaming)
+      result_conn = Task.await(task, 5_000)
+
+      assert result_conn.status == 200
+      assert result_conn.state == :chunked
+
+      assert Plug.Conn.get_resp_header(result_conn, "content-type")
+             |> Enum.any?(&(&1 =~ "text/event-stream"))
+    end
+  end
+
   describe "SSE response headers" do
     test "returns 200 chunked with text/event-stream content type", %{me: me} do
       conn = streaming_conn(me)
