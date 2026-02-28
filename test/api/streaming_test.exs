@@ -67,6 +67,36 @@ defmodule Bonfire.Notify.Web.StreamingControllerTest do
     to_string(feed_id)
   end
 
+  # Parses SSE chunks into a list of {event_type, decoded_data} tuples.
+  defp parse_sse_events(chunks) do
+    chunks
+    |> String.split("\n\n", trim: true)
+    |> Enum.flat_map(fn block ->
+      lines = String.split(block, "\n", trim: true)
+
+      event =
+        Enum.find_value(lines, fn
+          "event: " <> type -> type
+          _ -> nil
+        end)
+
+      data =
+        Enum.find_value(lines, fn
+          "data: " <> json -> json
+          _ -> nil
+        end)
+
+      if event && data do
+        case Jason.decode(data) do
+          {:ok, decoded} -> [{event, decoded}]
+          _ -> []
+        end
+      else
+        []
+      end
+    end)
+  end
+
   describe "GET /api/v1/streaming/health" do
     test "returns 200 OK as plain text" do
       response =
@@ -204,14 +234,12 @@ defmodule Bonfire.Notify.Web.StreamingControllerTest do
       Process.sleep(500)
       chunks = stop_and_read_chunks(task)
 
-      assert chunks =~ "event: notification\n"
-      assert chunks =~ "data: "
+      events = parse_sse_events(chunks)
 
-      [_, json_part] = String.split(chunks, "data: ", parts: 2)
-      decoded = Jason.decode!(String.trim(json_part))
-
-      assert decoded["title"] || decoded["body"],
-             "like notification should have a title or body"
+      assert Enum.any?(events, fn {type, data} ->
+               type == "notification" and (data["title"] || data["body"])
+             end),
+             "Expected a notification SSE event with title or body, got: #{inspect(events)}"
     end
 
     test "DM triggers an SSE message event for the recipient", %{me: me} do
@@ -246,12 +274,12 @@ defmodule Bonfire.Notify.Web.StreamingControllerTest do
         Process.sleep(500)
         chunks = stop_and_read_chunks(task)
 
-        assert chunks =~ "event: message\n"
+        events = parse_sse_events(chunks)
 
-        [_, json_part] = String.split(chunks, "data: ", parts: 2)
-        decoded = Jason.decode!(String.trim(json_part))
-
-        assert decoded["type"] == "message"
+        assert Enum.any?(events, fn {type, data} ->
+                 type == "message" and data["type"] == "message"
+               end),
+               "Expected a message SSE event, got: #{inspect(events)}"
       end
     end
   end

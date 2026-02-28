@@ -7,15 +7,18 @@ defmodule Bonfire.Notify.WebPush do
   import Ecto.Query
   import Bonfire.Common.Config, only: [repo: 0]
 
-  alias Bonfire.Notify.UserSubscription
+  alias Bonfire.Notify.PushSubscription
+  alias Bonfire.Notify.UserPushSubscription
 
   @doc """
   Registers a push subscription for a user.
+
+  Finds or creates a PushSubscription by endpoint, then links the user
+  via UserPushSubscription (with optional alerts/policy preferences).
   """
   @spec subscribe(String.t(), map() | String.t()) ::
-          {:ok, UserSubscription.t()} | {:error, Ecto.Changeset.t() | atom()}
+          {:ok, UserPushSubscription.t()} | {:error, Ecto.Changeset.t() | atom()}
   def subscribe(user_id, data) when is_binary(data) do
-    # Parse JSON string from browser
     case Jason.decode(data) do
       {:ok, parsed_data} -> subscribe(user_id, parsed_data)
       {:error, _} -> {:error, :invalid_json}
@@ -23,31 +26,61 @@ defmodule Bonfire.Notify.WebPush do
   end
 
   def subscribe(user_id, %{} = data) do
-    case UserSubscription.parse_subscription_data(data) do
+    case PushSubscription.parse_subscription_data(data) do
       {:ok, parsed_attrs} ->
-        attrs = Map.put(parsed_attrs, :user_id, user_id)
+        # Split device-level attrs from user-level attrs
+        {user_attrs, device_attrs} = split_attrs(parsed_attrs)
 
-        # Check if subscription already exists by endpoint
-        case repo().one(from s in UserSubscription, where: s.endpoint == ^attrs.endpoint) do
-          nil ->
-            # Insert new subscription
-            %UserSubscription{}
-            |> UserSubscription.changeset(attrs)
-            |> repo().insert()
-
-          existing ->
-            # Update existing subscription
-            existing
-            |> UserSubscription.changeset(attrs)
-            |> repo().update()
+        with {:ok, push_sub} <- PushSubscription.find_or_create_by_endpoint(device_attrs),
+             {:ok, user_sub} <- find_or_create_user_link(user_id, push_sub.id, user_attrs) do
+          {:ok, %{user_sub | push_subscription: push_sub}}
         end
 
       {:error, reason} ->
-        # Return a changeset error for consistency with insert failures
         {:error,
-         %UserSubscription{}
-         |> UserSubscription.changeset(%{})
+         %PushSubscription{}
+         |> PushSubscription.changeset(%{})
          |> Ecto.Changeset.add_error(:base, to_string(reason))}
+    end
+  end
+
+  defp split_attrs(parsed) do
+    user_attrs = Map.take(parsed, [:alerts, :policy])
+
+    device_attrs =
+      Map.take(parsed, [
+        :endpoint,
+        :auth_key,
+        :p256dh_key,
+        :platform,
+        :user_agent,
+        :device_name
+      ])
+
+    {user_attrs, device_attrs}
+  end
+
+  defp find_or_create_user_link(user_id, push_subscription_id, user_attrs) do
+    case repo().one(
+           from(us in UserPushSubscription,
+             where: us.id == ^user_id and us.push_subscription_id == ^push_subscription_id
+           )
+         ) do
+      nil ->
+        %UserPushSubscription{id: user_id}
+        |> UserPushSubscription.changeset(
+          Map.put(user_attrs, :push_subscription_id, push_subscription_id)
+        )
+        |> repo().insert()
+
+      existing ->
+        if user_attrs == %{} do
+          {:ok, existing}
+        else
+          existing
+          |> UserPushSubscription.changeset(user_attrs)
+          |> repo().update()
+        end
     end
   end
 
@@ -60,10 +93,12 @@ defmodule Bonfire.Notify.WebPush do
           optional(String.t()) => [ExNudge.Subscription.t()]
         }
   def get_subscriptions(user_ids) when is_list(user_ids) do
-    list_subscriptions(user_ids)
+    list_subscriptions_with_push(user_ids)
     |> Enum.group_by(
-      & &1.user_id,
-      &UserSubscription.to_ex_nudge_subscription/1
+      fn {user_sub, _push_sub} -> user_sub.id end,
+      fn {user_sub, push_sub} ->
+        PushSubscription.to_ex_nudge_subscription(push_sub, user_sub.id)
+      end
     )
   end
 
@@ -71,9 +106,16 @@ defmodule Bonfire.Notify.WebPush do
     get_subscriptions([user_id])
   end
 
+  @doc """
+  Lists active UserPushSubscription records for the given user IDs,
+  preloaded with their PushSubscription.
+  """
   def list_subscriptions(user_ids) when is_list(user_ids) do
-    from(s in UserSubscription,
-      where: s.user_id in ^user_ids and s.active == true
+    from(us in UserPushSubscription,
+      join: ps in PushSubscription,
+      on: ps.id == us.push_subscription_id,
+      where: us.id in ^user_ids and ps.active == true,
+      preload: [push_subscription: ps]
     )
     |> repo().many()
   end
@@ -82,8 +124,23 @@ defmodule Bonfire.Notify.WebPush do
     list_subscriptions([user_id])
   end
 
+  defp list_subscriptions_with_push(user_ids) do
+    from(us in UserPushSubscription,
+      join: ps in PushSubscription,
+      on: ps.id == us.push_subscription_id,
+      where: us.id in ^user_ids and ps.active == true,
+      select: {us, ps}
+    )
+    |> repo().many()
+  end
+
   def list_all_subscriptions(active? \\ true) do
-    from(s in UserSubscription, where: s.active == ^active?)
+    from(us in UserPushSubscription,
+      join: ps in PushSubscription,
+      on: ps.id == us.push_subscription_id,
+      where: ps.active == ^active?,
+      preload: [push_subscription: ps]
+    )
     |> repo().many()
   end
 
@@ -138,8 +195,6 @@ defmodule Bonfire.Notify.WebPush do
   This handles the case where notify_feed_ids from live_push are passed instead of user IDs.
   """
   def resolve_feed_ids_to_user_ids(feed_ids) when is_list(feed_ids) do
-    # Query Character table where notifications_id matches any of the feed_ids
-    # The character ID is the same as the user ID in Bonfire's Needle schema
     from(c in Bonfire.Data.Identity.Character,
       where: c.notifications_id in ^feed_ids,
       select: c.id
@@ -162,16 +217,13 @@ defmodule Bonfire.Notify.WebPush do
     Enum.each(results, fn
       {:ok, subscription, _response} ->
         debug(subscription.endpoint, "Push sent to subscription")
-        # Mark as successful
         update_subscription_status(subscription, :success)
 
       {:error, subscription, :subscription_expired} ->
-        # Mark as expired and remove
         mark_and_remove_expired(subscription)
         debug(subscription.endpoint, "Removed expired subscription")
 
       {:error, subscription, reason} ->
-        # Mark error but keep subscription active
         update_subscription_status(subscription, {:error, reason})
         debug(reason, "Failed to send to #{subscription.endpoint}")
     end)
@@ -185,7 +237,7 @@ defmodule Bonfire.Notify.WebPush do
   end
 
   defp update_subscription_status(%ExNudge.Subscription{endpoint: endpoint}, :success) do
-    from(s in UserSubscription, where: s.endpoint == ^endpoint)
+    from(s in PushSubscription, where: s.endpoint == ^endpoint)
     |> repo().update_all(
       set: [
         last_status: :success,
@@ -197,7 +249,7 @@ defmodule Bonfire.Notify.WebPush do
   end
 
   defp update_subscription_status(%ExNudge.Subscription{endpoint: endpoint}, {:error, reason}) do
-    from(s in UserSubscription, where: s.endpoint == ^endpoint)
+    from(s in PushSubscription, where: s.endpoint == ^endpoint)
     |> repo().update_all(
       set: [
         last_status: :error,
@@ -208,21 +260,76 @@ defmodule Bonfire.Notify.WebPush do
   end
 
   defp mark_and_remove_expired(%ExNudge.Subscription{endpoint: endpoint}) do
-    # Just delete - expired subscriptions are useless
+    # Delete the push subscription (cascades to user links via on_delete: :delete_all)
     remove_subscription_by_endpoint(endpoint)
   end
 
-  def remove_device(device_id) do
-    entity = repo().get!(UserSubscription, device_id)
-    repo().delete(entity)
+  @doc """
+  Removes a user's link to a push subscription by its push_subscription_id,
+  scoped to the given user.
+  """
+  def remove_device(user_id, push_subscription_id) do
+    case repo().one(
+           from(us in UserPushSubscription,
+             where: us.id == ^user_id and us.push_subscription_id == ^push_subscription_id
+           )
+         ) do
+      nil -> {:error, :not_found}
+      user_sub -> repo().delete(user_sub)
+    end
   end
 
   @doc """
   Removes a subscription by endpoint.
+  Deletes the PushSubscription (cascades to UserPushSubscription links).
   """
   def remove_subscription_by_endpoint(endpoint) when is_binary(endpoint) do
-    from(s in UserSubscription, where: s.endpoint == ^endpoint)
+    from(s in PushSubscription, where: s.endpoint == ^endpoint)
     |> repo().delete_all()
+  end
+
+  @doc """
+  Removes a PushSubscription by its database ID.
+  """
+  def remove_subscription(subscription_id) when is_binary(subscription_id) do
+    case repo().get(PushSubscription, subscription_id) do
+      nil -> {:error, :subscription_not_found}
+      subscription -> repo().delete(subscription)
+    end
+  end
+
+  @doc """
+  Removes a user's link to a push subscription, without deleting the push subscription itself.
+  """
+  def remove_user_subscription(user_id, push_subscription_id) do
+    from(us in UserPushSubscription,
+      where: us.id == ^user_id and us.push_subscription_id == ^push_subscription_id
+    )
+    |> repo().delete_all()
+  end
+
+  @doc """
+  Deletes all UserPushSubscription links for a given user.
+  Does not delete the underlying PushSubscription records.
+  """
+  def delete_all_for_user(user_id) do
+    from(us in UserPushSubscription, where: us.id == ^user_id)
+    |> repo().delete_all()
+  end
+
+  @doc """
+  Gets the most recent active push subscription for a user.
+  """
+  def get_user_subscription(user_id) do
+    from(us in UserPushSubscription,
+      join: ps in PushSubscription,
+      on: ps.id == us.push_subscription_id,
+      where: us.id == ^user_id and ps.active == true,
+      order_by: [desc: ps.last_used_at],
+      limit: 1,
+      preload: [push_subscription: ps]
+    )
+    |> repo().one()
   end
 
   @doc """
@@ -243,38 +350,35 @@ defmodule Bonfire.Notify.WebPush do
   Use with caution - this sends to every subscribed user.
   """
   def broadcast(message, opts \\ []) do
-    from(s in UserSubscription, where: s.active == true)
+    from(us in UserPushSubscription,
+      join: ps in PushSubscription,
+      on: ps.id == us.push_subscription_id,
+      where: ps.active == true,
+      select: {us, ps}
+    )
     |> repo().all()
-    |> Enum.map(&UserSubscription.to_ex_nudge_subscription/1)
+    |> Enum.map(fn {user_sub, push_sub} ->
+      PushSubscription.to_ex_nudge_subscription(push_sub, user_sub.id)
+    end)
     |> send_web_push_to_subscriptions(message, opts)
   end
 
   @doc """
-  Sends a push notification to a single subscription by database ID.
+  Sends a push notification to a single subscription by PushSubscription ID.
   Useful for testing individual subscriptions.
   """
   def send_push_notification(subscription_id, message, opts \\ [])
       when is_binary(subscription_id) do
-    case repo().get(UserSubscription, subscription_id) do
+    case repo().get(PushSubscription, subscription_id) do
       nil ->
         {:error, :subscription_not_found}
 
-      subscription ->
-        subscription
-        |> UserSubscription.to_ex_nudge_subscription()
+      push_sub ->
+        push_sub
+        |> PushSubscription.to_ex_nudge_subscription()
         |> List.wrap()
         |> send_web_push_to_subscriptions(message, opts)
         |> List.first()
-    end
-  end
-
-  @doc """
-  Removes a subscription by its database ID.
-  """
-  def remove_subscription(subscription_id) when is_binary(subscription_id) do
-    case repo().get(UserSubscription, subscription_id) do
-      nil -> {:error, :subscription_not_found}
-      subscription -> repo().delete(subscription)
     end
   end
 

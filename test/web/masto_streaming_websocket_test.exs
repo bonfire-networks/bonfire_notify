@@ -592,6 +592,7 @@ defmodule Bonfire.Notify.Web.MastoStreamingWebSocketTest do
               assert frame["stream"] == ["user"]
             end
           end
+
           # If frames == [], the feed IDs didn't match — acceptable for integration test
       after
         3_000 ->
@@ -764,7 +765,8 @@ defmodule Bonfire.Notify.Web.MastoStreamingWebSocketTest do
 
     assert is_binary(notification["id"]), "Notification.id must be a string"
 
-    valid_types = ~w(follow follow_request mention reblog favourite poll status update admin.report)
+    valid_types =
+      ~w(follow follow_request mention reblog favourite poll status update admin.report)
 
     assert notification["type"] in valid_types,
            "Notification.type '#{notification["type"]}' not in valid types"

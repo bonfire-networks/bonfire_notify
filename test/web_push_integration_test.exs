@@ -5,7 +5,7 @@ defmodule Bonfire.Notify.WebPushIntegrationTest do
   import Bonfire.Me.Fake
 
   alias Bonfire.Notify.WebPush
-  alias Bonfire.Notify.UserSubscription
+  alias Bonfire.Notify.PushSubscription
 
   describe "send_web_push/3 with mocked ExNudge" do
     setup do
@@ -50,11 +50,11 @@ defmodule Bonfire.Notify.WebPushIntegrationTest do
       assert length(results) == 2
       assert Enum.all?(results, fn {status, _, _} -> status == :ok end)
 
-      # Verify subscriptions were marked as successful
+      # Verify push subscriptions were marked as successful
       [sub1] = Map.get(WebPush.get_subscriptions([user1.id]), user1.id)
-      sub1_record = repo().get!(UserSubscription, sub1.metadata.id)
-      assert sub1_record.last_status == :success
-      assert sub1_record.last_error == nil
+      push_sub_record = repo().get!(PushSubscription, sub1.metadata.id)
+      assert push_sub_record.last_status == :success
+      assert push_sub_record.last_error == nil
     end
 
     test "handles expired subscriptions" do
@@ -95,11 +95,11 @@ defmodule Bonfire.Notify.WebPushIntegrationTest do
 
       assert [{:error, _, %{status_code: 500}}] = results
 
-      # Verify subscription was marked with error but still active
+      # Verify push subscription was marked with error but still active
       [sub] = Map.get(WebPush.get_subscriptions([user.id]), user.id)
-      sub_record = repo().get!(UserSubscription, sub.metadata.id)
-      assert sub_record.last_status == :error
-      assert sub_record.active == true
+      push_sub_record = repo().get!(PushSubscription, sub.metadata.id)
+      assert push_sub_record.last_status == :error
+      assert push_sub_record.active == true
     end
   end
 
@@ -133,9 +133,9 @@ defmodule Bonfire.Notify.WebPushIntegrationTest do
       # Verify our error handling worked - subscription should still be active
       # (only expired subscriptions get deleted)
       [sub] = Map.get(WebPush.get_subscriptions([user.id]), user.id)
-      sub_record = repo().get!(UserSubscription, sub.metadata.id)
-      assert sub_record.active == true
-      assert sub_record.last_status == :error
+      push_sub_record = repo().get!(PushSubscription, sub.metadata.id)
+      assert push_sub_record.active == true
+      assert push_sub_record.last_status == :error
     end
   end
 end

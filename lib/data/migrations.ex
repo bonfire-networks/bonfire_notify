@@ -4,9 +4,9 @@ defmodule Bonfire.Notify.Migrations do
   import Needle.Migration
 
   def up do
+    # Device-level push subscription table (keeps existing table name)
     create table(:bonfire_notify_web_push_subscription, primary_key: false) do
       add(:id, :binary_id, primary_key: true)
-      add(:user_id, :binary, null: false)
       add(:endpoint, :text, null: false)
       add(:auth_key, :text, null: false)
       add(:p256dh_key, :text, null: false)
@@ -19,26 +19,14 @@ defmodule Bonfire.Notify.Migrations do
       add(:last_used_at, :utc_datetime)
       add(:last_status, :string)
       add(:last_error, :text)
-
-      # Mastodon-compatible push subscription fields
-      add(:alerts, :map,
-        default: %{
-          "follow" => true,
-          "favourite" => true,
-          "reblog" => true,
-          "mention" => true,
-          "poll" => true,
-          "status" => false,
-          "update" => false
-        }
-      )
-
-      add(:policy, :string, default: "all")
     end
 
     create(unique_index(:bonfire_notify_web_push_subscription, [:endpoint]))
-    create(index(:bonfire_notify_web_push_subscription, [:user_id]))
     create(index(:bonfire_notify_web_push_subscription, [:active]))
+
+    # User-to-push-subscription mixin (per-user preferences)
+    require Bonfire.Notify.UserPushSubscription.Migration
+    Bonfire.Notify.UserPushSubscription.Migration.migrate_user_push_subscription(:up)
 
     execute("""
     CREATE TYPE notification_event AS ENUM (
@@ -51,6 +39,9 @@ defmodule Bonfire.Notify.Migrations do
   end
 
   def down do
+    require Bonfire.Notify.UserPushSubscription.Migration
+    Bonfire.Notify.UserPushSubscription.Migration.migrate_user_push_subscription(:down)
+
     drop(table(:bonfire_notify_web_push_subscription))
     execute("DROP TYPE notification_event")
   end

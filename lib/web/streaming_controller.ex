@@ -124,6 +124,14 @@ defmodule Bonfire.Notify.Web.StreamingController do
             conn
         end
 
+      # Feed activity updates (from LivePush) — not relevant for SSE clients
+      {{Bonfire.Social.Feeds, _action}, _data} ->
+        stream_loop(conn)
+
+      # same with thread live updates
+      {{Bonfire.Social.Threads.LiveHandler, _action}, _data} ->
+        stream_loop(conn)
+
       {:plug_conn, :sent} ->
         stream_loop(conn)
 

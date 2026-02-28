@@ -56,7 +56,12 @@ defmodule Bonfire.Notify.Settings.PushNotificationsLive do
   # Check if current browser's subscription is registered on the server
   def handle_event("check_subscription", %{"endpoint" => endpoint}, socket) do
     subscriptions = socket.assigns[:subscriptions] || []
-    is_subscribed = Enum.any?(subscriptions, fn sub -> sub.endpoint == endpoint end)
+
+    is_subscribed =
+      Enum.any?(subscriptions, fn sub ->
+        push_sub = sub.push_subscription
+        push_sub && push_sub.endpoint == endpoint
+      end)
 
     {:noreply,
      socket
@@ -99,7 +104,7 @@ defmodule Bonfire.Notify.Settings.PushNotificationsLive do
 
   # Handle when JS successfully disables push subscription
   def handle_event("push_subscription_disabled", %{"endpoint" => endpoint}, socket) do
-    # Remove the subscription from the server
+    # Remove the push subscription from the server (cascades to user links)
     case WebPush.remove_subscription_by_endpoint(endpoint) do
       {count, _} when count > 0 ->
         user = current_user(socket.assigns)
@@ -130,9 +135,11 @@ defmodule Bonfire.Notify.Settings.PushNotificationsLive do
      put_flash(socket, :error, l("Failed to enable notifications: %{error}", error: error))}
   end
 
-  # Handle remove device
-  def handle_event("remove_device", %{"id" => device_id}, socket) do
-    case WebPush.remove_subscription(device_id) do
+  # Handle remove device — removes the user's link to the push subscription
+  def handle_event("remove_device", %{"id" => push_subscription_id}, socket) do
+    user = current_user(socket.assigns)
+
+    case WebPush.remove_device(id(user), push_subscription_id) do
       {:ok, _} ->
         user = current_user(socket.assigns)
 
@@ -148,7 +155,10 @@ defmodule Bonfire.Notify.Settings.PushNotificationsLive do
 
         current_device_subscribed =
           if current_endpoint do
-            Enum.any?(subscriptions, fn sub -> sub.endpoint == current_endpoint end)
+            Enum.any?(subscriptions, fn sub ->
+              push_sub = sub.push_subscription
+              push_sub && push_sub.endpoint == current_endpoint
+            end)
           else
             false
           end
@@ -204,6 +214,7 @@ defmodule Bonfire.Notify.Settings.PushNotificationsLive do
 
   @doc false
   def is_current_device?(sub, current_endpoint) do
-    sub.endpoint == current_endpoint
+    push_sub = sub.push_subscription
+    push_sub && push_sub.endpoint == current_endpoint
   end
 end

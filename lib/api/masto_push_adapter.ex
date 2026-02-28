@@ -14,7 +14,9 @@ defmodule Bonfire.Notify.API.MastoPushAdapter do
   import Ecto.Query
 
   alias Bonfire.API.GraphQL.RestAdapter
-  alias Bonfire.Notify.UserSubscription
+  alias Bonfire.Notify.PushSubscription
+  alias Bonfire.Notify.UserPushSubscription
+  alias Bonfire.Notify.WebPush
   import Bonfire.Common.Config, only: [repo: 0]
 
   @doc """
@@ -36,18 +38,31 @@ defmodule Bonfire.Notify.API.MastoPushAdapter do
   """
   def create(params, conn) do
     RestAdapter.with_current_user(conn, fn current_user ->
-      case UserSubscription.parse_subscription_data(params) do
+      case PushSubscription.parse_subscription_data(params) do
         {:ok, parsed_attrs} ->
-          attrs = maybe_add_device_info(parsed_attrs, conn)
           user_id = id(current_user)
 
           # Per Mastodon spec: creating a new subscription replaces the old one
-          UserSubscription.delete_all_for_user(user_id)
+          WebPush.delete_all_for_user(user_id)
 
-          %UserSubscription{user_id: user_id}
-          |> UserSubscription.changeset(attrs)
-          |> repo().insert()
-          |> respond_with_subscription(conn)
+          device_attrs =
+            parsed_attrs
+            |> Map.take([:endpoint, :auth_key, :p256dh_key])
+            |> maybe_add_device_info(conn)
+
+          with {:ok, push_sub} <- PushSubscription.find_or_create_by_endpoint(device_attrs) do
+            user_attrs =
+              Map.take(parsed_attrs, [:alerts, :policy])
+              |> Map.put(:push_subscription_id, push_sub.id)
+
+            %UserPushSubscription{id: user_id}
+            |> UserPushSubscription.changeset(user_attrs)
+            |> repo().insert()
+            |> respond_with_subscription(push_sub, conn)
+          else
+            {:error, reason} ->
+              RestAdapter.error_fn({:error, inspect(reason)}, conn)
+          end
 
         {:error, _reason} ->
           RestAdapter.error_fn({:error, "Invalid subscription data"}, conn)
@@ -64,12 +79,12 @@ defmodule Bonfire.Notify.API.MastoPushAdapter do
     RestAdapter.with_current_user(conn, fn current_user ->
       user_id = id(current_user)
 
-      case UserSubscription.get(user_id) do
+      case WebPush.get_user_subscription(user_id) do
         nil ->
           RestAdapter.error_fn({:error, :not_found}, conn)
 
-        subscription ->
-          RestAdapter.json(conn, format_response(subscription))
+        user_sub ->
+          RestAdapter.json(conn, format_response(user_sub, user_sub.push_subscription))
       end
     end)
   end
@@ -93,21 +108,23 @@ defmodule Bonfire.Notify.API.MastoPushAdapter do
     RestAdapter.with_current_user(conn, fn current_user ->
       user_id = id(current_user)
 
-      case UserSubscription.get(user_id) do
+      case WebPush.get_user_subscription(user_id) do
         nil ->
           RestAdapter.error_fn({:error, :not_found}, conn)
 
-        subscription ->
+        user_sub ->
           data = params["data"] || %{}
 
           update_attrs =
             %{}
-            |> maybe_put_alerts(data["alerts"], subscription.alerts)
+            |> maybe_put_alerts(data["alerts"], user_sub.alerts)
             |> maybe_put_policy(data["policy"])
 
-          case UserSubscription.update_subscription(subscription, update_attrs) do
+          case user_sub
+               |> UserPushSubscription.changeset(update_attrs)
+               |> repo().update() do
             {:ok, updated} ->
-              RestAdapter.json(conn, format_response(updated))
+              RestAdapter.json(conn, format_response(updated, user_sub.push_subscription))
 
             {:error, changeset} ->
               RestAdapter.error_fn({:error, changeset_error(changeset)}, conn)
@@ -125,8 +142,8 @@ defmodule Bonfire.Notify.API.MastoPushAdapter do
     RestAdapter.with_current_user(conn, fn current_user ->
       user_id = id(current_user)
 
-      # Delete if exists, return 200 regardless (per Mastodon spec)
-      UserSubscription.delete_all_for_user(user_id)
+      # Delete user's links, not the underlying PushSubscription (per Mastodon spec)
+      WebPush.delete_all_for_user(user_id)
 
       conn
       |> Plug.Conn.put_resp_content_type("application/json")
@@ -136,11 +153,11 @@ defmodule Bonfire.Notify.API.MastoPushAdapter do
 
   # Private helpers
 
-  defp respond_with_subscription({:ok, subscription}, conn) do
-    RestAdapter.json(conn, format_response(subscription))
+  defp respond_with_subscription({:ok, user_sub}, push_sub, conn) do
+    RestAdapter.json(conn, format_response(user_sub, push_sub))
   end
 
-  defp respond_with_subscription({:error, changeset}, conn) do
+  defp respond_with_subscription({:error, changeset}, _push_sub, conn) do
     RestAdapter.error_fn({:error, changeset_error(changeset)}, conn)
   end
 
@@ -168,8 +185,7 @@ defmodule Bonfire.Notify.API.MastoPushAdapter do
   defp maybe_put_alerts(attrs, nil, _existing), do: attrs
 
   defp maybe_put_alerts(attrs, new_alerts, existing_alerts) when is_map(new_alerts) do
-    # Merge new alerts with existing ones (new values override)
-    merged = Map.merge(existing_alerts || %{}, new_alerts)
+    merged = Map.merge(PushSubscription.effective_alerts(existing_alerts), new_alerts)
     Map.put(attrs, :alerts, merged)
   end
 
@@ -196,16 +212,16 @@ defmodule Bonfire.Notify.API.MastoPushAdapter do
   defp changeset_error(other), do: inspect(other)
 
   @doc """
-  Formats a subscription record into Mastodon API response format.
+  Formats a subscription into Mastodon API response format.
   """
-  def format_response(%UserSubscription{} = subscription) do
+  def format_response(%UserPushSubscription{} = user_sub, %PushSubscription{} = push_sub) do
     %{
-      "id" => subscription.id,
-      "endpoint" => subscription.endpoint,
+      "id" => push_sub.id,
+      "endpoint" => push_sub.endpoint,
       "standard" => false,
       "server_key" => vapid_public_key(),
-      "alerts" => subscription.alerts || UserSubscription.default_alerts(),
-      "policy" => subscription.policy || "all"
+      "alerts" => PushSubscription.effective_alerts(user_sub.alerts),
+      "policy" => PushSubscription.effective_policy(user_sub.policy)
     }
   end
 

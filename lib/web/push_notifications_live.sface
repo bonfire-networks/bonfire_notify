@@ -78,7 +78,8 @@
           </div>
           <ul class="space-y-1">
             {#for sub <- @subscriptions}
-              {#case {browser_from_endpoint(sub.endpoint), is_current_device?(sub, @current_endpoint)}}
+              {#case {browser_from_endpoint(sub.push_subscription.endpoint),
+                 is_current_device?(sub, @current_endpoint)}}
                 {#match {browser, is_current}}
                   <li class={
                     "flex items-center justify-between py-2 rounded-lg",
@@ -100,10 +101,10 @@
                           <span :if={is_current} class="badge badge-primary badge-xs">{l("Current")}</span>
                         </span>
                         <span class="text-xs text-base-content/50">
-                          #{short_id(sub.endpoint)}
-                          <span :if={sub.last_used_at}>
-                            · {Bonfire.Common.DatesTimes.date_from_now(sub.last_used_at)}</span>
-                          <span :if={sub.last_status == :error} class="text-error">
+                          #{short_id(sub.push_subscription.endpoint)}
+                          <span :if={sub.push_subscription.last_used_at}>
+                            · {Bonfire.Common.DatesTimes.date_from_now(sub.push_subscription.last_used_at)}</span>
+                          <span :if={sub.push_subscription.last_status == :error} class="text-error">
                             · {l("Failed")}</span>
                         </span>
                       </div>
@@ -112,7 +113,7 @@
                       type="button"
                       class="btn btn-ghost btn-xs text-error hover:bg-error/10"
                       phx-click="remove_device"
-                      phx-value-id={sub.id}
+                      phx-value-id={sub.push_subscription_id}
                       phx-target={@myself}
                       data-confirm={l("Remove this device from push notifications?")}
                       aria-label={l("Remove device")}

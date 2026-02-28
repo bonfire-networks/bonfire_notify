@@ -4,7 +4,7 @@ defmodule Bonfire.Notify.WebPushTest do
 
   import Bonfire.Me.Fake
   alias Bonfire.Notify.WebPush
-  alias Bonfire.Notify.UserSubscription
+  alias Bonfire.Notify.PushSubscription
 
   @valid_data %{
     "endpoint" => "https://endpoint.test",
@@ -19,35 +19,58 @@ defmodule Bonfire.Notify.WebPushTest do
       user = fake_user!()
       json_data = Jason.encode!(@valid_data)
 
-      {:ok, subscription} = WebPush.subscribe(user.id, json_data)
+      {:ok, user_sub} = WebPush.subscribe(user.id, json_data)
 
-      assert subscription.user_id == user.id
-      assert subscription.endpoint == "https://endpoint.test"
-      assert subscription.auth_key == "test_auth"
-      assert subscription.p256dh_key == "test_p256dh"
-      assert subscription.active == true
+      # subscribe returns a UserPushSubscription; device data is on PushSubscription
+      assert user_sub.id == user.id
+      assert user_sub.push_subscription_id
+
+      push_sub = repo().get!(PushSubscription, user_sub.push_subscription_id)
+      assert push_sub.endpoint == "https://endpoint.test"
+      assert push_sub.auth_key == "test_auth"
+      assert push_sub.p256dh_key == "test_p256dh"
+      assert push_sub.active == true
     end
 
     test "creates a new subscription from map" do
       user = fake_user!()
 
-      {:ok, subscription} = WebPush.subscribe(user.id, @valid_data)
+      {:ok, user_sub} = WebPush.subscribe(user.id, @valid_data)
 
-      assert subscription.endpoint == "https://endpoint.test"
+      push_sub = repo().get!(PushSubscription, user_sub.push_subscription_id)
+      assert push_sub.endpoint == "https://endpoint.test"
     end
 
-    test "updates existing subscription on conflict" do
+    test "returns existing link on duplicate endpoint for same user" do
       user = fake_user!()
 
       {:ok, sub1} = WebPush.subscribe(user.id, @valid_data)
-      original_id = sub1.id
+      original_push_sub_id = sub1.push_subscription_id
 
       # Update with new keys
       updated_data = put_in(@valid_data, ["keys", "auth"], "new_auth")
       {:ok, sub2} = WebPush.subscribe(user.id, updated_data)
 
-      assert sub2.id == original_id
-      assert sub2.auth_key == "new_auth"
+      # Same user link to the same push subscription
+      assert sub2.push_subscription_id == original_push_sub_id
+
+      # PushSubscription keys should be updated
+      push_sub = repo().get!(PushSubscription, original_push_sub_id)
+      assert push_sub.auth_key == "new_auth"
+    end
+
+    test "allows multiple users to share the same endpoint" do
+      user1 = fake_user!()
+      user2 = fake_user!()
+
+      {:ok, sub1} = WebPush.subscribe(user1.id, @valid_data)
+      {:ok, sub2} = WebPush.subscribe(user2.id, @valid_data)
+
+      # Both link to the same PushSubscription
+      assert sub1.push_subscription_id == sub2.push_subscription_id
+      # But different users
+      assert sub1.id == user1.id
+      assert sub2.id == user2.id
     end
 
     test "returns error for invalid JSON" do
@@ -80,11 +103,13 @@ defmodule Bonfire.Notify.WebPushTest do
 
     test "only returns active subscriptions" do
       user = fake_user!()
-      {:ok, sub} = WebPush.subscribe(user.id, @valid_data)
+      {:ok, user_sub} = WebPush.subscribe(user.id, @valid_data)
 
-      # Mark as inactive
-      sub
-      |> UserSubscription.mark_expired()
+      # Mark the PushSubscription as inactive
+      push_sub = repo().get!(PushSubscription, user_sub.push_subscription_id)
+
+      push_sub
+      |> PushSubscription.mark_expired()
       |> repo().update!()
 
       subscriptions = WebPush.get_subscriptions([user.id])

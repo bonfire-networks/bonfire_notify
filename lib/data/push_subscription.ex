@@ -1,17 +1,24 @@
-defmodule Bonfire.Notify.UserSubscription do
+defmodule Bonfire.Notify.PushSubscription do
   @moduledoc """
-  The subscription schema for web push notifications.
+  Schema for a browser push subscription endpoint (device-level).
+
+  This represents the browser's push service registration — one per
+  service-worker origin + browser + device. Keys (p256dh, auth) are
+  tied to the subscription itself, not to any particular user.
+
+  Users are linked via `Bonfire.Notify.UserPushSubscription` (a Needle mixin),
+  allowing multiple users to share the same endpoint.
   """
 
   use Ecto.Schema
   import Untangle
   import Ecto.Changeset
   import Ecto.Query
-  alias Bonfire.Notify.UserSubscription
   import Bonfire.Common.Config, only: [repo: 0]
 
+  alias Bonfire.Notify.PushSubscription
+
   @primary_key {:id, :binary_id, autogenerate: true}
-  @foreign_key_type :binary_id
 
   @default_alerts %{
     "follow" => true,
@@ -27,7 +34,6 @@ defmodule Bonfire.Notify.UserSubscription do
   }
 
   schema "bonfire_notify_web_push_subscription" do
-    field(:user_id, :binary)
     field(:endpoint, :string)
     field(:auth_key, :string)
     field(:p256dh_key, :string)
@@ -40,28 +46,12 @@ defmodule Bonfire.Notify.UserSubscription do
     field(:last_used_at, :utc_datetime)
     field(:last_status, Ecto.Enum, values: [:success, :error, :expired, :pending])
     field(:last_error, :string)
-
-    # Mastodon-compatible push subscription fields
-    field(:alerts, :map, default: @default_alerts)
-    field(:policy, :string, default: "all")
   end
 
   @doc """
-  Creates a changeset for a subscription.
-
-  Note: `user_id` must be set explicitly on the struct before calling changeset,
-  or passed as a separate parameter, as it's not included in cast for security.
+  Creates a changeset for a push subscription.
   """
-  def changeset(struct, attrs \\ %{})
-
-  def changeset(struct, attrs) when is_map(attrs) do
-    # Set user_id explicitly if provided in attrs (security: not via cast)
-    struct =
-      case Map.get(attrs, :user_id) || Map.get(attrs, "user_id") do
-        nil -> struct
-        user_id -> %{struct | user_id: user_id}
-      end
-
+  def changeset(struct \\ %PushSubscription{}, attrs) do
     struct
     |> cast(attrs, [
       :endpoint,
@@ -73,22 +63,11 @@ defmodule Bonfire.Notify.UserSubscription do
       :device_name,
       :last_used_at,
       :last_status,
-      :last_error,
-      :alerts,
-      :policy
+      :last_error
     ])
     |> validate_required([:endpoint, :auth_key, :p256dh_key])
-    |> validate_user_id()
     |> validate_inclusion(:last_status, [:success, :error, :expired, :pending])
-    |> validate_inclusion(:policy, ["all", "follower", "followed", "none"])
     |> unique_constraint(:endpoint)
-  end
-
-  defp validate_user_id(changeset) do
-    case Ecto.Changeset.get_field(changeset, :user_id) do
-      nil -> add_error(changeset, :user_id, "can't be blank")
-      _ -> changeset
-    end
   end
 
   @doc """
@@ -127,8 +106,8 @@ defmodule Bonfire.Notify.UserSubscription do
        endpoint: endpoint,
        p256dh_key: p256dh,
        auth_key: auth,
-       alerts: Map.merge(default_alerts(), data["alerts"] || %{}),
-       policy: data["policy"] || "all"
+       alerts: data["alerts"],
+       policy: data["policy"]
      }}
   end
 
@@ -143,9 +122,23 @@ defmodule Bonfire.Notify.UserSubscription do
   def default_alerts, do: @default_alerts
 
   @doc """
-  Converts a UserSubscription record to ExNudge.Subscription format.
+  Returns effective alerts, resolving nil to defaults.
   """
-  def to_ex_nudge_subscription(%__MODULE__{} = subscription) do
+  def effective_alerts(nil), do: @default_alerts
+  def effective_alerts(alerts) when is_map(alerts), do: Map.merge(@default_alerts, alerts)
+
+  @doc """
+  Returns effective policy, resolving nil to "all".
+  """
+  def effective_policy(nil), do: "all"
+  def effective_policy(policy), do: policy
+
+  @doc """
+  Converts a PushSubscription record to ExNudge.Subscription format.
+
+  Optionally accepts a user_id for metadata.
+  """
+  def to_ex_nudge_subscription(%__MODULE__{} = subscription, user_id \\ nil) do
     %ExNudge.Subscription{
       endpoint: subscription.endpoint,
       keys: %{
@@ -154,16 +147,9 @@ defmodule Bonfire.Notify.UserSubscription do
       },
       metadata: %{
         id: subscription.id,
-        user_id: subscription.user_id
+        user_id: user_id
       }
     }
-  end
-
-  @doc """
-  Updates the last_used_at timestamp for a subscription.
-  """
-  def touch(subscription) do
-    changeset(subscription, %{last_used_at: DateTime.utc_now()})
   end
 
   @doc """
@@ -201,44 +187,30 @@ defmodule Bonfire.Notify.UserSubscription do
   end
 
   @doc """
-  Deletes all subscriptions for a given user.
+  Finds a push subscription by endpoint.
   """
-  def delete_all_for_user(user_id) do
-    from(s in UserSubscription, where: s.user_id == ^user_id)
-    |> repo().delete_all()
-  end
-
-  def get(user_id) do
-    from(s in UserSubscription,
-      where: s.user_id == ^user_id and s.active == true,
-      order_by: [desc: s.last_used_at],
-      limit: 1
-    )
+  def get_by_endpoint(endpoint) do
+    from(s in PushSubscription, where: s.endpoint == ^endpoint)
     |> repo().one()
-  end
-
-  def get_subscription_by_endpoint(endpoint) do
-    from(s in UserSubscription, where: s.endpoint == ^endpoint)
-    |> repo().one()
-  end
-
-  def update_subscription(subscription, attrs) do
-    subscription
-    |> UserSubscription.changeset(attrs)
-    |> repo().update()
   end
 
   @doc """
-  Creates or updates a subscription. If `existing` is nil, inserts a new one
-  for the given `user_id`; otherwise updates the existing record.
+  Finds or creates a push subscription by endpoint, updating keys if changed.
   """
-  def maybe_upsert_subscription(nil, attrs, user_id) do
-    %UserSubscription{user_id: user_id}
-    |> UserSubscription.changeset(attrs)
-    |> repo().insert()
-  end
+  def find_or_create_by_endpoint(attrs) do
+    case get_by_endpoint(attrs.endpoint) do
+      nil ->
+        %PushSubscription{}
+        |> changeset(attrs)
+        |> repo().insert()
 
-  def maybe_upsert_subscription(existing, attrs, _user_id) do
-    update_subscription(existing, attrs)
+      existing ->
+        # Update keys if they changed
+        existing
+        |> changeset(
+          Map.take(attrs, [:auth_key, :p256dh_key, :platform, :user_agent, :device_name])
+        )
+        |> repo().update()
+    end
   end
 end

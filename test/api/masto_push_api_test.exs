@@ -303,13 +303,10 @@ defmodule Bonfire.Notify.Web.MastoPushApiTest do
       assert response["error"] =~ "Not found"
     end
 
-    test "returns 404 when no subscription exists", %{conn: conn} do
-      response =
-        conn
-        |> delete("/api/v1/push/subscription")
-        |> json_response(404)
-
-      assert response["error"] =~ "Not found"
+    test "returns 200 even when no subscription exists (per Mastodon spec)", %{conn: conn} do
+      conn
+      |> delete("/api/v1/push/subscription")
+      |> json_response(200)
     end
 
     test "returns 401 without authorization", %{} do

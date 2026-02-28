@@ -4,7 +4,8 @@ defmodule Bonfire.Notify.UserSubscriptionsTest do
   import Bonfire.Me.Fake
 
   alias Bonfire.Data.Identity.User
-  alias Bonfire.Notify.UserSubscription
+  alias Bonfire.Notify.PushSubscription
+  alias Bonfire.Notify.UserPushSubscription
   alias Bonfire.Notify.UserSubscriptions
 
   describe "create/2" do
@@ -16,20 +17,20 @@ defmodule Bonfire.Notify.UserSubscriptionsTest do
     test "inserts the subscription for the user", %{
       user: %User{id: user_id} = user
     } do
-      # Check that we gracefully handle duplicates
-      {:ok, sub1} = UserSubscriptions.create(user, valid_push_subscription_data("a"))
-      assert sub1.endpoint == "a"
-      assert sub1.user_id == user_id
+      # Create a subscription and verify the user link
+      {:ok, user_sub1} = UserSubscriptions.create(user, valid_push_subscription_data("a"))
+      assert user_sub1.id == user_id
+      assert user_sub1.push_subscription_id
 
-      {:ok, sub2} = UserSubscriptions.create(user, valid_push_subscription_data("a"))
-      # Same subscription updated
-      assert sub2.id == sub1.id
+      # Creating with the same endpoint returns the existing link
+      {:ok, user_sub2} = UserSubscriptions.create(user, valid_push_subscription_data("a"))
+      assert user_sub2.push_subscription_id == user_sub1.push_subscription_id
 
       # List returns ExNudge.Subscription format
       subscriptions = UserSubscriptions.list(user_id)
       assert %{^user_id => [%ExNudge.Subscription{endpoint: "a"}]} = subscriptions
 
-      # A user can have multiple distinct subscriptions
+      # A user can have multiple distinct subscriptions (different endpoints)
       {:ok, _} = UserSubscriptions.create(user, valid_push_subscription_data("b"))
 
       data =
@@ -42,7 +43,7 @@ defmodule Bonfire.Notify.UserSubscriptionsTest do
 
       assert data == ["a", "b"]
 
-      # Multiple users can have the same subscription endpoint (different devices)
+      # Multiple users can share the same push endpoint
       %User{id: another_user_id} = another_user = fake_user!()
 
       {:ok, _} =
@@ -67,19 +68,22 @@ defmodule Bonfire.Notify.UserSubscriptionsTest do
       assert %{} = UserSubscriptions.list([user.id])
     end
 
-    test "updates subscription on duplicate endpoint", %{user: user} do
-      {:ok, sub1} = UserSubscriptions.create(user, valid_push_subscription_data("endpoint1"))
-      original_id = sub1.id
+    test "updates push subscription keys on duplicate endpoint", %{user: user} do
+      {:ok, user_sub1} = UserSubscriptions.create(user, valid_push_subscription_data("endpoint1"))
+      original_push_sub_id = user_sub1.push_subscription_id
 
       # Update with new keys for same endpoint
       data = valid_push_subscription_map("endpoint1")
       data = put_in(data, ["keys", "auth"], "new_auth_key")
 
-      {:ok, sub2} = UserSubscriptions.create(user, data)
+      {:ok, user_sub2} = UserSubscriptions.create(user, data)
 
-      # Should be same subscription ID but with updated keys
-      assert sub2.id == original_id
-      assert sub2.auth_key == "new_auth_key"
+      # Same push subscription (same endpoint), same user link
+      assert user_sub2.push_subscription_id == original_push_sub_id
+
+      # The PushSubscription's keys should be updated
+      push_sub = repo().get!(PushSubscription, original_push_sub_id)
+      assert push_sub.auth_key == "new_auth_key"
     end
   end
 
@@ -91,14 +95,16 @@ defmodule Bonfire.Notify.UserSubscriptionsTest do
 
     test "only returns active subscriptions" do
       user = fake_user!()
-      {:ok, sub} = UserSubscriptions.create(user, valid_push_subscription_data("active"))
+      {:ok, user_sub} = UserSubscriptions.create(user, valid_push_subscription_data("active"))
 
-      # Mark as inactive
-      sub
-      |> UserSubscription.mark_expired()
+      # Mark the PushSubscription as inactive
+      push_sub = repo().get!(PushSubscription, user_sub.push_subscription_id)
+
+      push_sub
+      |> PushSubscription.mark_expired()
       |> repo().update!()
 
-      # Should not appear in list
+      # Should not appear in list (filtered by active on PushSubscription)
       assert %{} = UserSubscriptions.list(user.id)
     end
 

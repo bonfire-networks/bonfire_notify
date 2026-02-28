@@ -10,7 +10,7 @@ defmodule Bonfire.Notify.UserSubscriptions do
   Creates a push subscription for a user.
   """
   @spec create(User.t() | String.t(), map() | String.t()) ::
-          {:ok, UserSubscription.t()} | {:error, atom()}
+          {:ok, any()} | {:error, atom()}
   def create(%User{id: user_id}, data), do: create(user_id, data)
 
   def create(user_id, data) when is_binary(user_id) do
