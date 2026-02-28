@@ -1,8 +1,27 @@
 defmodule Bonfire.Notify.PostsTest do
-  use Bonfire.Notify.DataCase, async: true
+  use Bonfire.Notify.DataCase, async: false
 
   import Ecto.Query
   import Bonfire.Me.Fake
+
+  setup do
+    # Ensure VAPID keys are configured so notify/2 doesn't short-circuit with :disabled
+    prev = Application.get_env(:ex_nudge, :vapid_details)
+
+    Application.put_env(:ex_nudge, :vapid_details,
+      vapid_public_key: "test_public_key",
+      vapid_private_key: "test_private_key",
+      vapid_subject: "mailto:test@example.com"
+    )
+
+    on_exit(fn ->
+      if prev,
+        do: Application.put_env(:ex_nudge, :vapid_details, prev),
+        else: Application.delete_env(:ex_nudge, :vapid_details)
+    end)
+
+    :ok
+  end
 
   describe "notify/2" do
     test "attempt to send a notification to a user" do
