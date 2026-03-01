@@ -136,19 +136,29 @@ defmodule Bonfire.Notify.Web.MastoStreamingWebSocket do
     feed_ids = List.wrap(data[:feed_ids])
     activity = data[:activity]
     feed_id_strs = Enum.map(feed_ids, &to_string/1)
+    notif_feed_str = state.notification_feed_id && to_string(state.notification_feed_id)
 
     frames =
-      Enum.reduce(state.subscriptions, [], fn {stream_name, topic}, acc ->
-        if to_string(topic) in feed_id_strs do
-          case EventFormatter.format_update(activity, current_user: state.user) do
-            {:ok, payload} ->
-              frame = EventFormatter.to_ws_frame(to_stream_array(stream_name), "update", payload)
-              debug("[MastoWS] pushing update frame (#{byte_size(frame)} bytes)")
-              [frame | acc]
+      Enum.reduce(state.subscriptions, [], fn {stream_name, topics}, acc ->
+        topic_strs = Enum.map(topics, &to_string/1)
+        matching_topics = Enum.filter(topic_strs, &(&1 in feed_id_strs))
 
-            :skip ->
-              debug("[MastoWS] format_update returned :skip")
-              acc
+        if matching_topics != [] do
+          is_notification = notif_feed_str != nil and notif_feed_str in matching_topics
+
+          if is_notification and stream_name in ["user", "user:notification"] do
+            emit_notification_and_maybe_update(stream_name, activity, state, acc)
+          else
+            case EventFormatter.format_update(activity, current_user: state.user) do
+              {:ok, payload} ->
+                frame = EventFormatter.to_ws_frame(to_stream_array(stream_name), "update", payload)
+                debug("[MastoWS] pushing update frame (#{byte_size(frame)} bytes)")
+                [frame | acc]
+
+              :skip ->
+                debug("[MastoWS] format_update returned :skip")
+                acc
+            end
           end
         else
           acc
@@ -272,28 +282,30 @@ defmodule Bonfire.Notify.Web.MastoStreamingWebSocket do
       # Already subscribed
       state
     else
-      case resolve_topic(stream_name, state.user) do
-        nil ->
-          debug(stream_key, "[MastoWS] Could not resolve topic for stream")
-          state
+      topics = resolve_topics(stream_name, state.user)
 
-        topic ->
-          topic_str = to_string(topic)
-          Phoenix.PubSub.subscribe(Bonfire.Common.PubSub, topic_str)
+      if topics == [] do
+        debug(stream_key, "[MastoWS] Could not resolve topic for stream")
+        state
+      else
+        for topic <- topics do
+          Phoenix.PubSub.subscribe(Bonfire.Common.PubSub, to_string(topic))
+        end
 
-          debug("[MastoWS] Subscribed to #{stream_key} (topic: #{topic_str})")
+        debug("[MastoWS] Subscribed to #{stream_key} (topics: #{inspect(topics)})")
 
-          subscriptions = Map.put(state.subscriptions, stream_key, topic)
+        subscriptions = Map.put(state.subscriptions, stream_key, topics)
 
-          # Track notification feed ID so we can distinguish notification vs update events
-          notification_feed_id =
-            if stream_name in ["user", "user:notification"] do
-              topic
-            else
-              state.notification_feed_id
-            end
+        # Track notification feed ID so we can distinguish notification vs update events
+        # For "user", topics is [inbox_id, notifications_id]; for "user:notification", topics is [notifications_id]
+        notification_feed_id =
+          if stream_name in ["user", "user:notification"] do
+            List.last(topics)
+          else
+            state.notification_feed_id
+          end
 
-          %{state | subscriptions: subscriptions, notification_feed_id: notification_feed_id}
+        %{state | subscriptions: subscriptions, notification_feed_id: notification_feed_id}
       end
     end
   end
@@ -303,12 +315,18 @@ defmodule Bonfire.Notify.Web.MastoStreamingWebSocket do
       {nil, _} ->
         state
 
-      {topic, remaining} ->
-        Phoenix.PubSub.unsubscribe(Bonfire.Common.PubSub, to_string(topic))
+      {topics, remaining} ->
+        for topic <- topics do
+          Phoenix.PubSub.unsubscribe(Bonfire.Common.PubSub, to_string(topic))
+        end
+
         debug("[MastoWS] Unsubscribed from #{stream_key}")
 
+        # Only nil notification_feed_id if no remaining subscription needs it
         notification_feed_id =
-          if stream_key in ["user", "user:notification"] do
+          if stream_key in ["user", "user:notification"] and
+               not Map.has_key?(remaining, "user") and
+               not Map.has_key?(remaining, "user:notification") do
             nil
           else
             state.notification_feed_id
@@ -318,74 +336,66 @@ defmodule Bonfire.Notify.Web.MastoStreamingWebSocket do
     end
   end
 
-  defp resolve_topic(stream_name, user) do
+  defp resolve_topics(stream_name, user) do
     case stream_name do
       "user" ->
-        Bonfire.Common.Utils.maybe_apply(
-          Bonfire.Social.Feeds,
-          :my_feed_id,
-          [:notifications, user]
-        )
+        # Per Mastodon spec: user stream includes home timeline + notifications
+        [
+          Bonfire.Common.Utils.maybe_apply(Bonfire.Social.Feeds, :my_feed_id, [:inbox, user]),
+          Bonfire.Common.Utils.maybe_apply(Bonfire.Social.Feeds, :my_feed_id, [
+            :notifications,
+            user
+          ])
+        ]
+        |> Enum.reject(&is_nil/1)
 
       "user:notification" ->
-        Bonfire.Common.Utils.maybe_apply(
-          Bonfire.Social.Feeds,
-          :my_feed_id,
-          [:notifications, user]
-        )
+        Bonfire.Common.Utils.maybe_apply(Bonfire.Social.Feeds, :my_feed_id, [
+          :notifications,
+          user
+        ])
+        |> List.wrap()
 
       "public" ->
-        Bonfire.Common.Utils.maybe_apply(
-          Bonfire.Social.Feeds,
-          :named_feed_id,
-          [:guest]
-        )
+        Bonfire.Common.Utils.maybe_apply(Bonfire.Social.Feeds, :named_feed_id, [:guest])
+        |> List.wrap()
 
       "public:local" ->
-        Bonfire.Common.Utils.maybe_apply(
-          Bonfire.Social.Feeds,
-          :named_feed_id,
-          [:local]
-        )
+        Bonfire.Common.Utils.maybe_apply(Bonfire.Social.Feeds, :named_feed_id, [:local])
+        |> List.wrap()
 
       # Media variants map to same topics (media filtering is a TODO)
       "public:media" ->
-        resolve_topic("public", user)
+        resolve_topics("public", user)
 
       "public:local:media" ->
-        resolve_topic("public:local", user)
+        resolve_topics("public:local", user)
 
       # Remote/federated feed
       "public:remote" ->
-        Bonfire.Common.Utils.maybe_apply(
-          Bonfire.Social.Feeds,
-          :named_feed_id,
-          [:activity_pub]
-        )
+        Bonfire.Common.Utils.maybe_apply(Bonfire.Social.Feeds, :named_feed_id, [:activity_pub])
+        |> List.wrap()
 
       "public:remote:media" ->
-        resolve_topic("public:remote", user)
+        resolve_topics("public:remote", user)
 
       "direct" ->
-        Bonfire.Common.Utils.maybe_apply(
-          Bonfire.Social.Feeds,
-          :my_feed_id,
-          [:inbox, user]
-        )
+        Bonfire.Common.Utils.maybe_apply(Bonfire.Social.Feeds, :my_feed_id, [:inbox, user])
+        |> List.wrap()
 
       # Stubs: accepted but no PubSub topic exists yet
       "hashtag" ->
-        nil
+        []
 
       "hashtag:local" ->
-        nil
+        []
 
       "list" ->
-        nil
+        []
 
       other ->
         debug(other, "[MastoWS] Unknown stream type")
-        nil
+        []
     end
   end
 
