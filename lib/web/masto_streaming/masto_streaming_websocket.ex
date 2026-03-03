@@ -151,7 +151,9 @@ defmodule Bonfire.Notify.Web.MastoStreamingWebSocket do
           else
             case EventFormatter.format_update(activity, current_user: state.user) do
               {:ok, payload} ->
-                frame = EventFormatter.to_ws_frame(to_stream_array(stream_name), "update", payload)
+                frame =
+                  EventFormatter.to_ws_frame(to_stream_array(stream_name), "update", payload)
+
                 debug("[MastoWS] pushing update frame (#{byte_size(frame)} bytes)")
                 [frame | acc]
 
