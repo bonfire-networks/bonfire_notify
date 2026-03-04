@@ -8,11 +8,6 @@ defmodule Bonfire.Notify.Web.Routes do
         pipe_through(:browser)
       end
 
-      # pages only guests can view
-      scope "/", Bonfire.Notify.Web do
-        pipe_through([:throttle_forms, :browser, :guest_only])
-      end
-
       # pages you need an account to view
       scope "/", Bonfire.Notify.Web do
         pipe_through(:browser)
