@@ -211,6 +211,8 @@ defmodule Bonfire.Notify.WebPush do
   defp send_web_push_to_subscriptions(subscriptions, message, opts)
        when is_list(subscriptions) and subscriptions != [] do
     debug(message, "sending push to #{length(subscriptions)} subscriptions")
+    # Default TTL to 24 hours so offline devices receive notifications when they reconnect
+    opts = Keyword.put_new(opts, :ttl, 86_400)
     results = ex_nudge_module().send_notifications(subscriptions, message, opts)
 
     # Update subscription statuses based on results

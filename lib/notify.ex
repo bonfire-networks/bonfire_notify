@@ -24,17 +24,21 @@ defmodule Bonfire.Notify do
   end
 
   def enabled? do
-    case vapid_config() do
-      [] ->
-        false
+    # Check both the nested :vapid_details key and the flat top-level keys
+    # (runtime_config.ex sets flat keys like :vapid_public_key directly under :ex_nudge)
+    has_keys? =
+      case vapid_config() do
+        config when is_list(config) and config != [] ->
+          (config[:vapid_private_key] || config[:private_key]) != nil and
+            (config[:vapid_public_key] || config[:public_key]) != nil
 
-      config when is_list(config) ->
-        (config[:vapid_private_key] || config[:private_key]) != nil and
-          (config[:vapid_public_key] || config[:public_key]) != nil
+        _ ->
+          false
+      end
 
-      _ ->
-        false
-    end
+    has_keys? ||
+      (Application.get_env(:ex_nudge, :vapid_public_key) != nil and
+         Application.get_env(:ex_nudge, :vapid_private_key) != nil)
   end
 
   # Backward compatibility alias
@@ -64,30 +68,27 @@ defmodule Bonfire.Notify do
     debug(object, "📨 Bonfire.Notify.notify called with object")
     debug(subscribers, "📨 Subscribers")
 
-    creator = Map.get(object, :creator, %{})
-
-    # Send web push notifications
     if enabled?() do
-      send_push_notifications(object, creator, subscribers)
+      send_push_notifications(object, subscribers)
     else
       error("📨 Web push disabled - VAPID keys not configured")
       {:error, :disabled}
     end
   end
 
-  defp send_push_notifications(object, creator, subscribers) do
-    # Get user IDs excluding the creator
+  defp send_push_notifications(object, subscribers) do
+    creator = Map.get(object, :creator, %{})
+    creator_id = uid(creator)
+
     user_ids =
       subscribers
-      |> Enum.reject(&(uid(&1) == uid(creator)))
       |> Enum.map(&uid/1)
-      |> Enum.reject(&is_nil/1)
+      |> Enum.reject(&(is_nil(&1) or &1 == creator_id))
 
     debug(user_ids, "📨 User IDs after filtering")
 
     if user_ids != [] do
-      # Format the push message
-      message = format_push_message(object, creator)
+      message = format_message_from(object, creator)
       debug(message, "📨 Formatted push message JSON")
 
       # Send via WebPush
@@ -98,6 +99,21 @@ defmodule Bonfire.Notify do
       error("📨 no_valid_recipients: No valid user IDs after filtering")
       {:error, :no_valid_recipients}
     end
+  end
+
+  defp format_message_from(%{title: title, message: body} = assigns, _creator) do
+    # Pre-formatted preview_assigns from LivePush — use directly
+    WebPush.format_push_message(
+      title,
+      body || "New notification",
+      url: assigns[:url],
+      tag: assigns[:tag]
+    )
+  end
+
+  defp format_message_from(object, creator) do
+    # Raw object struct — extract content
+    format_push_message(object, creator)
   end
 
   @doc """

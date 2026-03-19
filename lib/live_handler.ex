@@ -47,8 +47,8 @@ defmodule Bonfire.Notify.LiveHandler do
           broadcast_device_added(subscription)
           {:noreply, put_flash(socket, :info, "Device subscribed successfully!")}
 
-        {:error, changeset} ->
-          error_msg = format_changeset_errors(changeset)
+        {:error, reason} ->
+          error_msg = Bonfire.Common.Errors.error_msg(reason)
           {:noreply, put_flash(socket, :error, "Subscription failed: #{error_msg}")}
       end
     else
@@ -62,12 +62,13 @@ defmodule Bonfire.Notify.LiveHandler do
 
   def handle_event("unsubscribe", %{"endpoint" => endpoint}, socket) do
     case WebPush.remove_subscription_by_endpoint(endpoint) do
-      {1, subscription} ->
-        broadcast_device_removed(subscription)
+      {count, _} when count > 0 ->
+        # repo().delete_all returns {count, nil} — broadcast with a minimal struct for the endpoint
+        broadcast_device_removed(%{endpoint: endpoint})
         {:noreply, put_flash(socket, :info, "Device removed successfully!")}
 
-      {0, error} ->
-        {:noreply, put_flash(socket, :error, "Failed to remove device: #{error || "not found"}")}
+      {0, _} ->
+        {:noreply, put_flash(socket, :error, "Failed to remove device: not found")}
     end
   end
 
@@ -132,6 +133,13 @@ defmodule Bonfire.Notify.LiveHandler do
     {:noreply, stream(socket, :subscriptions, subscriptions, reset: true)}
   end
 
+  def handle_info({:device_removed, %{endpoint: endpoint}}, socket) do
+    {:noreply,
+     socket
+     |> assign(:subscription_size, max(0, socket.assigns.subscription_size - 1))
+     |> push_event("device_removed", %{endpoint: endpoint})}
+  end
+
   def handle_info({:device_removed, subscription}, socket) do
     {:noreply,
      socket
@@ -163,12 +171,6 @@ defmodule Bonfire.Notify.LiveHandler do
       "push_notifications",
       {:device_added, subscription}
     )
-  end
-
-  defp format_changeset_errors(changeset) do
-    Enum.map_join(changeset.errors, ", ", fn {field, {message, _}} ->
-      "#{field}: #{message}"
-    end)
   end
 
   defp format_message(title, body) do
