@@ -1,14 +1,23 @@
-<form
-  :if={extension_enabled?(:bonfire_ui_social, @__context__)}
-  data-scope="reply_or_mentions"
-  phx-change={@event_name || "Bonfire.Common.Settings:set"}
-  phx-target={@event_target}
->
-  <Bonfire.UI.Common.SettingsToggleLive
-    name={l("Replies and @ mentions")}
-    keys={[:email_notifications, :reply_or_mentions]}
-    default_value={false}
-    scope={@scope}
-    compact
-  />
-</form>
+<div :if={extension_enabled?(:bonfire_ui_social, @__context__)}>
+  <form
+    phx-change={@event_name || "Bonfire.Common.Settings:set"}
+    phx-target={@event_target}
+  >
+    <div class="divide-y divide-base-content/5">
+      <label class="flex items-center justify-between py-3 cursor-pointer group">
+        <div class="flex items-center gap-3">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-info/10 text-info">
+            <#Icon iconify="ph:at-duotone" class="size-4" />
+          </span>
+          <span class="text-sm">{l("Replies and @ mentions")}</span>
+        </div>
+        <Bonfire.UI.Common.SettingsToggleLive
+          keys={[:email_notifications, :reply_or_mentions]}
+          default_value={false}
+          scope={@scope}
+          compact
+        />
+      </label>
+    </div>
+  </form>
+</div>

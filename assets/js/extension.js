@@ -1,5 +1,15 @@
 import { PWAUtils } from "./pwa-utils";
 
+// Clear stale badge count when user returns to the app
+if ('clearAppBadge' in navigator) {
+  const clearBadge = () => navigator.clearAppBadge().catch(() => {});
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') clearBadge();
+  });
+  window.addEventListener('focus', clearBadge);
+  clearBadge();
+}
+
 let NotifyHooks = {};
 
 NotifyHooks.PushNotificationHook = {
@@ -332,12 +342,20 @@ NotifyHooks.PushSettingsHook = {
     // Setup PWA install handling
     this.setupPwaInstall();
 
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+    if (!('serviceWorker' in navigator)) {
       this.pushEventTo(this.el, 'push_not_supported', {});
       return;
     }
 
     await this.initServiceWorker();
+
+    // Check PushManager after SW registration — in PWAs it may only be
+    // available on the registration object, not on window
+    if (!this.swRegistration?.pushManager && !('PushManager' in window)) {
+      this.pushEventTo(this.el, 'push_not_supported', {});
+      return;
+    }
+
     await this.checkCurrentSubscription();
 
     this.handleEvent('request_push_permission', async (payload) => {
@@ -486,6 +504,79 @@ NotifyHooks.PushSettingsHook = {
       .replace(/_/g, '/');
     const rawData = window.atob(base64);
     return new Uint8Array([...rawData].map(char => char.charCodeAt(0)));
+  }
+};
+
+NotifyHooks.PWAInstallBannerHook = {
+  mounted() {
+    this.deferredPrompt = null;
+    this._handlers = {};
+
+    const banner = this.el;
+    const installBtn = this.el.querySelector('[data-pwa-install]');
+    const dismissBtn = this.el.querySelector('[data-pwa-dismiss]');
+    const iosInstructions = this.el.querySelector('[data-pwa-ios]');
+
+    if (localStorage.getItem('pwa-install-dismissed') || PWAUtils.isPWAMode()) {
+      return;
+    }
+
+    if (PWAUtils.isIOS()) {
+      banner.classList.remove('hidden');
+      if (iosInstructions) iosInstructions.classList.remove('hidden');
+      if (installBtn) installBtn.classList.add('hidden');
+    }
+
+    // Android/Desktop: show banner when beforeinstallprompt fires
+    this._handlers.beforeinstallprompt = (e) => {
+      e.preventDefault();
+      this.deferredPrompt = e;
+      banner.classList.remove('hidden');
+      if (iosInstructions) iosInstructions.classList.add('hidden');
+      if (installBtn) installBtn.classList.remove('hidden');
+    };
+    window.addEventListener('beforeinstallprompt', this._handlers.beforeinstallprompt);
+
+    if (installBtn) {
+      this._handlers.installClick = async () => {
+        if (!this.deferredPrompt) return;
+        this.deferredPrompt.prompt();
+        const { outcome } = await this.deferredPrompt.userChoice;
+        this.deferredPrompt = null;
+        if (outcome === 'accepted') banner.classList.add('hidden');
+      };
+      installBtn.addEventListener('click', this._handlers.installClick);
+    }
+
+    if (dismissBtn) {
+      this._handlers.dismissClick = () => {
+        banner.classList.add('hidden');
+        localStorage.setItem('pwa-install-dismissed', Date.now().toString());
+      };
+      dismissBtn.addEventListener('click', this._handlers.dismissClick);
+    }
+
+    this._handlers.appinstalled = () => {
+      banner.classList.add('hidden');
+      this.deferredPrompt = null;
+    };
+    window.addEventListener('appinstalled', this._handlers.appinstalled);
+  },
+
+  destroyed() {
+    if (this._handlers.beforeinstallprompt) {
+      window.removeEventListener('beforeinstallprompt', this._handlers.beforeinstallprompt);
+    }
+    if (this._handlers.appinstalled) {
+      window.removeEventListener('appinstalled', this._handlers.appinstalled);
+    }
+    if (this._handlers.installClick) {
+      this.el.querySelector('[data-pwa-install]')?.removeEventListener('click', this._handlers.installClick);
+    }
+    if (this._handlers.dismissClick) {
+      this.el.querySelector('[data-pwa-dismiss]')?.removeEventListener('click', this._handlers.dismissClick);
+    }
+    this.deferredPrompt = null;
   }
 };
 

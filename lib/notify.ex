@@ -9,6 +9,7 @@ defmodule Bonfire.Notify do
   use Application
   use Bonfire.Common.Utils
   import Untangle
+  import Ecto.Query
 
   alias Bonfire.Notify.WebPush
 
@@ -79,11 +80,13 @@ defmodule Bonfire.Notify do
   defp send_push_notifications(object, subscribers) do
     creator = Map.get(object, :creator, %{})
     creator_id = uid(creator)
+    category = Map.get(object, :notify_category)
 
     user_ids =
       subscribers
       |> Enum.map(&uid/1)
       |> Enum.reject(&(is_nil(&1) or &1 == creator_id))
+      |> filter_by_push_preferences(category)
 
     debug(user_ids, "📨 User IDs after filtering")
 
@@ -91,14 +94,32 @@ defmodule Bonfire.Notify do
       message = format_message_from(object, creator)
       debug(message, "📨 Formatted push message JSON")
 
-      # Send via WebPush
       result = WebPush.send_web_push(user_ids, message)
       debug(result, "📨 WebPush.send_web_push result")
       result
     else
-      error("📨 no_valid_recipients: No valid user IDs after filtering")
+      debug("📨 no_valid_recipients: No valid user IDs after filtering")
       {:error, :no_valid_recipients}
     end
+  end
+
+  defp filter_by_push_preferences(ids, nil), do: ids
+  defp filter_by_push_preferences([], _), do: []
+
+  defp filter_by_push_preferences(ids, category) do
+    user_ids =
+      case WebPush.resolve_feed_ids_to_user_ids(ids) do
+        [] -> ids
+        resolved -> resolved
+      end
+
+    from(u in Bonfire.Data.Identity.User,
+      where: u.id in ^user_ids,
+      preload: [:settings]
+    )
+    |> Bonfire.Common.Repo.many()
+    |> Enum.filter(&Bonfire.Common.Settings.get([:push_notifications, category], true, context: &1))
+    |> Enum.map(&uid/1)
   end
 
   defp format_message_from(%{title: title, message: body} = assigns, _creator) do

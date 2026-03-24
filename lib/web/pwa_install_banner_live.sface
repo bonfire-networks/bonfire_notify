@@ -1,0 +1,51 @@
+<div
+  id="pwa-install-banner"
+  phx-hook="PWAInstallBannerHook"
+  class="hidden fixed bottom-0 inset-x-0 z-[99999999999999] p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]"
+>
+  {!-- Gradient border wrapper --}
+  <div class="mx-auto max-w-lg w-full rounded-2xl p-[1px]"
+    style="background: linear-gradient(135deg, var(--color-primary), var(--color-secondary), var(--color-accent), var(--color-primary));"
+  >
+    <div class="bg-base-100 w-full rounded-[calc(1rem-1px)] shadow-[0_-4px_30px_rgba(0,0,0,.2)] px-4 py-3">
+      <div class="flex items-center gap-3">
+        <img src={Config.get([:ui, :theme, :instance_icon], "/images/bonfire-icon.png")} alt="" class="w-9 h-9 rounded-xl flex-shrink-0" />
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-semibold leading-tight">{l("Install %{name}", name: Config.get([:ui, :theme, :instance_name], Bonfire.Application.name_and_flavour()))}</p>
+          <p class="text-xs text-base-content/50 leading-tight mt-0.5">{l("Get the full app experience")}</p>
+        </div>
+        <div class="flex items-center gap-1.5 flex-shrink-0">
+          <button
+            data-pwa-install
+            type="button"
+            class="btn btn-primary btn-sm"
+          >
+            {l("Install")}
+          </button>
+          <button
+            data-pwa-dismiss
+            type="button"
+            class="btn btn-ghost btn-sm btn-square text-base-content/40"
+            aria-label={l("Dismiss")}
+          >
+            <#Icon iconify="ph:x-duotone" class="size-4" />
+          </button>
+        </div>
+      </div>
+
+      {!-- iOS: inline steps row --}
+      <div data-pwa-ios class="hidden flex items-center gap-4 mt-2.5 pt-2.5 border-t border-base-content/5 text-xs text-base-content/70">
+        <span class="flex items-center gap-1.5">
+          <span class="flex items-center justify-center w-4 h-4 rounded-full bg-primary/20 text-primary text-[9px] font-bold">1</span>
+          {l("Tap")}
+          <svg class="w-4 h-4 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12l7-7 7 7"/><line x1="5" y1="19" x2="19" y2="19"/></svg>
+          <span class="font-medium text-base-content">{l("Share")}</span>
+        </span>
+        <span class="flex items-center gap-1.5">
+          <span class="flex items-center justify-center w-4 h-4 rounded-full bg-primary/20 text-primary text-[9px] font-bold">2</span>
+          <span class="font-medium text-base-content">{l("Add to Home Screen")}</span>
+        </span>
+      </div>
+    </div>
+  </div>
+</div>

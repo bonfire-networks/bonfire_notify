@@ -67,6 +67,24 @@ defmodule Bonfire.Notify.PostsTest do
     end
   end
 
+  describe "push notification preferences" do
+    test "notify/2 sends when no preferences set (defaults enabled)" do
+      creator = fake_user!()
+      user = fake_user!()
+
+      object = %{
+        id: Needle.ULID.generate(),
+        title: "someone liked",
+        message: "your post",
+        url: "/test",
+        creator: creator
+      }
+
+      # Reaches WebPush but no device registered
+      assert {:error, :no_subscriptions} = Bonfire.Notify.notify(object, [user])
+    end
+  end
+
   describe "format_push_message/3" do
     test "formats a push notification message" do
       creator = fake_user!()

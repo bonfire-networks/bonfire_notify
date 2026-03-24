@@ -15,6 +15,7 @@ defmodule Bonfire.Notify.Settings.PushNotificationsLive do
 
   alias Bonfire.Notify.WebPush
 
+  prop scope, :any, default: nil
   data vapid_public_key, :string, default: nil
   data subscriptions, :list, default: []
   data push_supported, :boolean, default: true

@@ -7,15 +7,26 @@ export const PWAUtils = {
     return window.navigator.standalone === true;
   },
 
+  isIOS() {
+    return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+           (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent)) ||
+           (/Macintosh/.test(navigator.userAgent) && 'ontouchend' in document);
+  },
+
+  isMobile() {
+    return this.isIOS() ||
+           /Android|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+           (window.innerWidth <= 768 && navigator.maxTouchPoints > 0);
+  },
+
   isPWAMode() {
-    return this.isStandalone() || 
+    return this.isStandalone() ||
            this.isIOSStandalone() ||
            window.matchMedia('(display-mode: minimal-ui)').matches ||
            window.matchMedia('(display-mode: fullscreen)').matches;
   },
 
   promptToInstallPWA() {
-
     let deferredPrompt = null;
     window.addEventListener('beforeinstallprompt', (e) => {
       e.preventDefault();
@@ -24,19 +35,13 @@ export const PWAUtils = {
 
       if (installBtn) {
         installBtn.addEventListener('click', async () => {
-          console.log('PWA button clicked');
           installBtn.disabled = true;
           deferredPrompt.prompt();
-
           installBtn.disabled = false;
           installBtn.style.display = 'none';
           deferredPrompt = null;
         }, { once: true });
       }
-
-      console.log('✅ PWA install prompt initialized');
     });
-
-
   }
 };
