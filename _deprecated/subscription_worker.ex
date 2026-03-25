@@ -135,11 +135,8 @@ defmodule Bonfire.Notify.WebPush.SubscriptionWorker do
   defp adapter do
     default = Bonfire.Notify.WebPush.HttpAdapter
 
-    IO.inspect(vapid_keys: Application.get_env(:web_push_encryption, :vapid_details))
+    Bonfire.Common.Config.get(Bonfire.Notify.WebPush)[:adapter] || default
 
-    adapter = Bonfire.Common.Config.get(Bonfire.Notify.WebPush)[:adapter] || default
-
-    IO.inspect(adapter)
   end
 
   defp retry_timeout do

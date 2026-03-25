@@ -13,37 +13,56 @@ defmodule Bonfire.Notify do
 
   alias Bonfire.Notify.WebPush
 
+  def start(_, _) do
+    :telemetry.attach(
+      "bonfire_notify_vapid_setup",
+      [:settings, :load_config, :stop],
+      fn _event, _measurements, _meta, _config ->
+        :telemetry.detach("bonfire_notify_vapid_setup")
+        Bonfire.Notify.maybe_generate_keys()
+      end,
+      nil
+    )
+
+    Supervisor.start_link([], strategy: :one_for_one)
+  end
+
   declare_extension(
     "Notifications",
     icon: "ph:device-mobile",
     description: l("Manage your notification settings and registered devices")
   )
 
-  def vapid_config do
-    Application.get_env(:ex_nudge, :vapid_details, []) ||
-      Application.get_env(:web_push_encryption, :vapid_details, [])
-  end
-
   def enabled? do
-    # Check both the nested :vapid_details key and the flat top-level keys
-    # (runtime_config.ex sets flat keys like :vapid_public_key directly under :ex_nudge)
-    has_keys? =
-      case vapid_config() do
-        config when is_list(config) and config != [] ->
-          (config[:vapid_private_key] || config[:private_key]) != nil and
-            (config[:vapid_public_key] || config[:public_key]) != nil
-
-        _ ->
-          false
-      end
-
-    has_keys? ||
-      (Application.get_env(:ex_nudge, :vapid_public_key) != nil and
-         Application.get_env(:ex_nudge, :vapid_private_key) != nil)
+    Application.get_env(:ex_nudge, :vapid_public_key) != nil and
+      Application.get_env(:ex_nudge, :vapid_private_key) != nil
   end
 
-  # Backward compatibility alias
-  def enabled, do: enabled?()
+  @doc """
+  Generates VAPID keys for web push notifications if none are configured.
+
+  Called after `Bonfire.Common.Settings.LoadInstanceConfig` completes (via telemetry hook),
+  so DB-stored keys are already loaded into OTP config before we check.
+  Generated keys are persisted to instance settings so they survive restarts.
+  """
+  def maybe_generate_keys do
+    unless Bonfire.Notify.enabled?() do
+      info("Generating VAPID keys for web push notifications")
+      keys = ExNudge.VAPID.generate_vapid_keys()
+
+      # Persists to DB and also updates OTP config in-process via Config.put_tree,
+      # so keys are immediately available via Application.get_env(:ex_nudge, ...)
+      Bonfire.Common.Settings.put([:ex_nudge, :vapid_public_key], keys.public_key,
+        scope: :instance,
+        skip_boundary_check: true
+      )
+
+      Bonfire.Common.Settings.put([:ex_nudge, :vapid_private_key], keys.private_key,
+        scope: :instance,
+        skip_boundary_check: true
+      )
+    end
+  end
 
   @doc """
   Sends a notification about an object to a user or list of users.
@@ -118,7 +137,9 @@ defmodule Bonfire.Notify do
       preload: [:settings]
     )
     |> Bonfire.Common.Repo.many()
-    |> Enum.filter(&Bonfire.Common.Settings.get([:push_notifications, category], true, context: &1))
+    |> Enum.filter(
+      &Bonfire.Common.Settings.get([:push_notifications, category], true, context: &1)
+    )
     |> Enum.map(&uid/1)
   end
 

@@ -22,7 +22,7 @@ defmodule Bonfire.Notify.MixProject do
     ]
   end
 
-  def application, do: [extra_applications: [:logger, :runtime_tools]]
+  def application, do: [extra_applications: [:logger, :runtime_tools], mod: {Bonfire.Notify, []}]
 
   defp elixirc_paths(:test), do: ["lib", "test/support"]
   defp elixirc_paths(_), do: ["lib"]

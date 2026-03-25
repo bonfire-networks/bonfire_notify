@@ -1,8 +1,4 @@
-<div
-  id={"push-settings-#{@id}"}
-  phx-hook="PushSettingsHook"
-  data-vapid-key={@vapid_public_key}
->
+<div id={"push-settings-#{@id}"} phx-hook="PushSettingsHook" data-vapid-key={@vapid_public_key}>
   {!-- PWA Install prompt --}
   <div id="pwa-install-section" class="hidden mb-4">
     <div class="flex items-center justify-between p-3 rounded-xl bg-success/10 border border-success/20">
@@ -23,12 +19,18 @@
   </div>
 
   {!-- Warnings --}
-  <div :if={!@push_supported} class="flex items-center gap-3 p-3 rounded-xl bg-warning/10 border border-warning/20 mb-4">
+  <div
+    :if={!@push_supported}
+    class="flex items-center gap-3 p-3 rounded-xl bg-warning/10 border border-warning/20 mb-4"
+  >
     <#Icon iconify="ph:warning-duotone" class="size-5 text-warning flex-shrink-0" />
     <span class="text-sm text-base-content/70">{l("Push notifications are not supported in this browser")}</span>
   </div>
 
-  <div :if={!@vapid_public_key} class="flex items-center gap-3 p-3 rounded-xl bg-info/10 border border-info/20 mb-4">
+  <div
+    :if={!@vapid_public_key}
+    class="flex items-center gap-3 p-3 rounded-xl bg-info/10 border border-info/20 mb-4"
+  >
     <#Icon iconify="ph:info-duotone" class="size-5 text-info flex-shrink-0" />
     <span class="text-sm text-base-content/70">{l("Push notifications are not configured on this instance")}</span>
   </div>
@@ -93,7 +95,7 @@
             </div>
             <Bonfire.UI.Common.SettingsToggleLive
               keys={[:push_notifications, :replies_and_mentions]}
-              default_value={true}
+              default_value
               scope={@scope}
               compact
             />
@@ -107,7 +109,7 @@
             </div>
             <Bonfire.UI.Common.SettingsToggleLive
               keys={[:push_notifications, :likes]}
-              default_value={true}
+              default_value
               scope={@scope}
               compact
             />
@@ -121,7 +123,7 @@
             </div>
             <Bonfire.UI.Common.SettingsToggleLive
               keys={[:push_notifications, :boosts]}
-              default_value={true}
+              default_value
               scope={@scope}
               compact
             />
@@ -135,7 +137,7 @@
             </div>
             <Bonfire.UI.Common.SettingsToggleLive
               keys={[:push_notifications, :follows]}
-              default_value={true}
+              default_value
               scope={@scope}
               compact
             />
@@ -149,7 +151,7 @@
             </div>
             <Bonfire.UI.Common.SettingsToggleLive
               keys={[:push_notifications, :messages]}
-              default_value={true}
+              default_value
               scope={@scope}
               compact
             />
