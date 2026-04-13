@@ -45,14 +45,14 @@ defmodule Bonfire.Notify.LiveHandler do
       case WebPush.subscribe(id(current_user), subscription_data) do
         {:ok, subscription} ->
           broadcast_device_added(subscription)
-          {:noreply, put_flash(socket, :info, "Device subscribed successfully!")}
+          {:noreply, assign_flash(socket, :info, "Device subscribed successfully!")}
 
         {:error, reason} ->
           error_msg = Bonfire.Common.Errors.error_msg(reason)
-          {:noreply, put_flash(socket, :error, "Subscription failed: #{error_msg}")}
+          {:noreply, assign_flash(socket, :error, "Subscription failed: #{error_msg}")}
       end
     else
-      {:noreply, put_flash(socket, :error, "You must be logged in to subscribe")}
+      {:noreply, assign_flash(socket, :error, "You must be logged in to subscribe")}
     end
   end
 
@@ -65,10 +65,10 @@ defmodule Bonfire.Notify.LiveHandler do
       {count, _} when count > 0 ->
         # repo().delete_all returns {count, nil} — broadcast with a minimal struct for the endpoint
         broadcast_device_removed(%{endpoint: endpoint})
-        {:noreply, put_flash(socket, :info, "Device removed successfully!")}
+        {:noreply, assign_flash(socket, :info, "Device removed successfully!")}
 
       {0, _} ->
-        {:noreply, put_flash(socket, :error, "Failed to remove device: not found")}
+        {:noreply, assign_flash(socket, :error, "Failed to remove device: not found")}
     end
   end
 
@@ -78,11 +78,11 @@ defmodule Bonfire.Notify.LiveHandler do
            format_message("Test Message 📩", "Test for subscription #{subscription_id}.")
          ) do
       {:ok, _response} ->
-        {:noreply, put_flash(socket, :info, "Test sent to #{subscription_id}!")}
+        {:noreply, assign_flash(socket, :info, "Test sent to #{subscription_id}!")}
 
       {:error, reason} ->
         {:noreply,
-         put_flash(
+         assign_flash(
            socket,
            :error,
            "Notification to #{subscription_id} failed: #{inspect(reason)}"
@@ -102,10 +102,10 @@ defmodule Bonfire.Notify.LiveHandler do
             {:error, _, _} -> false
           end)
 
-        {:noreply, put_flash(socket, :info, "Test sent to #{successful_count} subscriptions")}
+        {:noreply, assign_flash(socket, :info, "Test sent to #{successful_count} subscriptions")}
 
       {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Broadcast failed: #{inspect(reason)}")}
+        {:noreply, assign_flash(socket, :error, "Broadcast failed: #{inspect(reason)}")}
     end
   end
 
@@ -113,10 +113,10 @@ defmodule Bonfire.Notify.LiveHandler do
     case WebPush.remove_subscription(subscription_id) do
       {:ok, sub} ->
         broadcast_device_removed(sub)
-        {:noreply, put_flash(socket, :info, "Device removed")}
+        {:noreply, assign_flash(socket, :info, "Device removed")}
 
       {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Failed to remove device: #{reason}")}
+        {:noreply, assign_flash(socket, :error, "Failed to remove device: #{reason}")}
     end
   end
 

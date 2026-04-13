@@ -85,13 +85,13 @@ defmodule Bonfire.Notify.Settings.PushNotificationsLive do
            socket
            |> assign(:subscriptions, subscriptions)
            |> assign(:current_device_subscribed, true)
-           |> put_flash(:info, l("Push notifications enabled for this device"))}
+           |> assign_flash(:info, l("Push notifications enabled for this device"))}
 
         {:error, changeset} ->
           error_msg = format_changeset_errors(changeset)
 
           {:noreply,
-           put_flash(
+           assign_flash(
              socket,
              :error,
              l("Failed to enable notifications: %{error}", error: error_msg)
@@ -99,7 +99,7 @@ defmodule Bonfire.Notify.Settings.PushNotificationsLive do
       end
     else
       {:noreply,
-       put_flash(socket, :error, l("You must be logged in to enable push notifications"))}
+       assign_flash(socket, :error, l("You must be logged in to enable push notifications"))}
     end
   end
 
@@ -121,19 +121,19 @@ defmodule Bonfire.Notify.Settings.PushNotificationsLive do
          socket
          |> assign(:subscriptions, subscriptions)
          |> assign(:current_device_subscribed, false)
-         |> put_flash(:info, l("Push notifications disabled for this device"))}
+         |> assign_flash(:info, l("Push notifications disabled for this device"))}
 
       _ ->
         {:noreply,
          socket
          |> assign(:current_device_subscribed, false)
-         |> put_flash(:info, l("Push notifications disabled"))}
+         |> assign_flash(:info, l("Push notifications disabled"))}
     end
   end
 
   def handle_event("push_subscription_error", %{"error" => error}, socket) do
     {:noreply,
-     put_flash(socket, :error, l("Failed to enable notifications: %{error}", error: error))}
+     assign_flash(socket, :error, l("Failed to enable notifications: %{error}", error: error))}
   end
 
   # Handle remove device — removes the user's link to the push subscription
@@ -168,11 +168,15 @@ defmodule Bonfire.Notify.Settings.PushNotificationsLive do
          socket
          |> assign(:subscriptions, subscriptions)
          |> assign(:current_device_subscribed, current_device_subscribed)
-         |> put_flash(:info, l("Device removed"))}
+         |> assign_flash(:info, l("Device removed"))}
 
       {:error, reason} ->
         {:noreply,
-         put_flash(socket, :error, l("Failed to remove device: %{error}", error: inspect(reason)))}
+         assign_flash(
+           socket,
+           :error,
+           l("Failed to remove device: %{error}", error: inspect(reason))
+         )}
     end
   end
 
