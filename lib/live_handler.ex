@@ -155,6 +155,30 @@ defmodule Bonfire.Notify.LiveHandler do
      |> assign(:subscription_size, socket.assigns.subscription_size + 1)}
   end
 
+  def handle_event("announce", params, socket) do
+    attrs =
+      params
+      |> Map.drop(["upload_metadata", "verb_permissions_json", "verb_permissions"])
+      |> input_to_atoms(
+        discard_unknown_keys: false,
+        also_discard_unknown_nested_keys: false,
+        force: false,
+        including_values: false
+      )
+
+    with {:ok, _published, count} <-
+           Bonfire.Notify.Broadcast.announce(current_user_required!(socket), attrs) do
+      {:noreply,
+       socket
+       |> Bonfire.UI.Common.SmartInput.LiveHandler.reset_input()
+       |> assign_flash(:info, l("Announcement sent to %{count} users!", count: count))}
+    else
+      e ->
+        error(e, "Could not send announcement")
+        {:noreply, assign_flash(socket, :error, l("Could not send the announcement"))}
+    end
+  end
+
   # Private helpers
 
   defp broadcast_device_removed(subscription) do

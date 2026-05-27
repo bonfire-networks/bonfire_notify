@@ -1,0 +1,11 @@
+<div class="flex flex-col gap-4 p-4">
+  <Bonfire.UI.Common.SmartInputButtonLive
+    id="admin_broadcast_button"
+    prompt={l("Compose Announcement")}
+    icon="ph:megaphone-duotone"
+    smart_input_opts={%{
+      create_object_type: :announcement,
+      to_boundaries: [{"local", l("Local")}]
+    }}
+  />
+</div>
