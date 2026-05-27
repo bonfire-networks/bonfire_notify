@@ -24,6 +24,16 @@ defmodule Bonfire.Notify.DataCase do
       import Ecto.Changeset
       import Ecto.Query
       # import Bonfire.Notify.DataCase
+      import Bonfire.Me.Fake,
+        only: [
+          fake_account!: 0,
+          fake_account!: 1,
+          fake_user!: 0,
+          fake_user!: 1,
+          fake_user!: 2,
+          fake_user!: 3
+        ]
+
       import Bonfire.Notify.Test.FakeHelpers
     end
   end

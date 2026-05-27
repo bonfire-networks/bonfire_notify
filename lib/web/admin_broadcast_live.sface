@@ -4,7 +4,7 @@
     prompt={l("Compose Announcement")}
     icon="ph:megaphone-duotone"
     smart_input_opts={%{
-      create_object_type: :announcement,
+      create_object_type: :broadcast,
       to_boundaries: [{"local", l("Local")}]
     }}
   />

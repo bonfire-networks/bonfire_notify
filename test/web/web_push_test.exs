@@ -2,7 +2,6 @@ defmodule Bonfire.Notify.WebPushTest do
   use Bonfire.Notify.DataCase, async: true
   use Bonfire.Common.Repo
 
-  import Bonfire.Me.Fake
   alias Bonfire.Notify.WebPush
   alias Bonfire.Notify.PushSubscription
 

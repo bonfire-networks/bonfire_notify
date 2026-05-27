@@ -3,7 +3,6 @@ defmodule Bonfire.Notify.PushNotificationPreferencesTest do
 
   use Bonfire.Common.Utils
 
-  import Bonfire.Me.Fake
   import Bonfire.Social.Fake
 
   alias Bonfire.Social.Feeds

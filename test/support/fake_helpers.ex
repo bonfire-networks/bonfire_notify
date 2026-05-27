@@ -1,12 +1,12 @@
 defmodule Bonfire.Notify.Test.FakeHelpers do
-  alias Bonfire.Data.Identity.Account
   alias Bonfire.Me.Fake
-  alias Bonfire.Me.Accounts
   alias Bonfire.Me.Users
 
-  import ExUnit.Assertions
-
-  import Bonfire.Common.Config, only: [repo: 0]
+  def fake_admin!(account \\ %{}, attrs \\ %{}, opts \\ []) do
+    user = Fake.fake_user!(account, attrs, opts)
+    {:ok, user} = Users.make_admin(user)
+    user
+  end
 
   # Helper functions
   def valid_push_subscription_data(endpoint) do

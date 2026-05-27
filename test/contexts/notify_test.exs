@@ -2,7 +2,6 @@ defmodule Bonfire.Notify.PostsTest do
   use Bonfire.Notify.DataCase, async: false
 
   import Ecto.Query
-  import Bonfire.Me.Fake
 
   describe "notify/2" do
     test "attempt to send a notification to a user" do

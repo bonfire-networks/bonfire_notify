@@ -25,7 +25,8 @@ defmodule Bonfire.Notify.ConnCase do
       import Plug.Conn
       import Phoenix.ConnTest
 
-      import Bonfire.UI.Common.Testing.Helpers
+      import Bonfire.UI.Common.Testing.Helpers,
+        except: [fake_admin!: 0, fake_admin!: 1, fake_admin!: 2, fake_admin!: 3]
 
       import Phoenix.LiveViewTest
       import PhoenixTest
