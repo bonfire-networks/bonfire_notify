@@ -171,6 +171,43 @@ defmodule Bonfire.Notify.Web.MastoStreamingWebSocket do
     push_frames(frames, state)
   end
 
+  def handle_info({{Bonfire.Social.Feeds, :hide_activity}, payload}, state) do
+    {feed_ids, activity_id} =
+      case payload do
+        data when is_list(data) -> {List.wrap(data[:feed_ids]), data[:activity_id]}
+        # tolerate a bare activity id (older broadcast shape)
+        activity_id -> {[], activity_id}
+      end
+
+    feed_id_strs = Enum.map(feed_ids, &to_string/1)
+
+    frames =
+      if activity_id do
+        {:ok, delete_payload} = EventFormatter.format_delete(activity_id)
+
+        Enum.reduce(state.subscriptions, [], fn {stream_name, topics}, acc ->
+          topic_strs = Enum.map(topics, &to_string/1)
+          # With feed_ids, only emit on streams whose topic matches; without them
+          # (bare payload) emit on every subscribed stream so clients still purge it.
+          matches? = feed_id_strs == [] or Enum.any?(topic_strs, &(&1 in feed_id_strs))
+
+          if matches? do
+            frame =
+              EventFormatter.to_ws_frame(to_stream_array(stream_name), "delete", delete_payload)
+
+            [frame | acc]
+          else
+            acc
+          end
+        end)
+      else
+        []
+      end
+
+    debug("[MastoWS] pushing #{length(frames)} delete frames")
+    push_frames(frames, state)
+  end
+
   def handle_info({:push_frame, frame}, state) do
     {:push, {:text, frame}, state}
   end
@@ -180,10 +217,10 @@ defmodule Bonfire.Notify.Web.MastoStreamingWebSocket do
     {:ok, state}
   end
 
-  def handle_info({:new_message, %{thread_id: thread_id}}, state) do
+  def handle_info({:new_message, %{thread_id: _} = data}, state) do
     # DM / conversation event
     if Map.has_key?(state.subscriptions, "direct") do
-      {:ok, payload} = EventFormatter.format_conversation(thread_id, current_user: state.user)
+      {:ok, payload} = EventFormatter.format_conversation(data, current_user: state.user)
       frame = EventFormatter.to_ws_frame(["direct"], "conversation", payload)
       {:push, {:text, frame}, state}
     else

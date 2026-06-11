@@ -60,6 +60,18 @@ defmodule Bonfire.Notify.WebPush do
     {user_attrs, device_attrs}
   end
 
+  @doc """
+  Links a user to a push subscription (by `push_subscription_id`), creating the
+  link if it doesn't exist or updating its alerts/policy if it does.
+
+  This is the multi-device-safe way to register a subscription: it never touches
+  the user's *other* device links, so subscribing on one device leaves existing
+  subscriptions on other devices intact (per the Mastodon push API).
+  """
+  def upsert_user_link(user_id, push_subscription_id, user_attrs \\ %{}) do
+    find_or_create_user_link(user_id, push_subscription_id, user_attrs)
+  end
+
   defp find_or_create_user_link(user_id, push_subscription_id, user_attrs) do
     case repo().one(
            from(us in UserPushSubscription,
@@ -150,36 +162,27 @@ defmodule Bonfire.Notify.WebPush do
 
   The IDs can be either user IDs or notification feed IDs - both are resolved
   to find matching push subscriptions.
+
+  ## Options
+
+  - `:notify_category` - a Bonfire notification category (e.g. `:likes`,
+    `:boosts`, `:follows`, `:messages`, `:replies_and_mentions`). When given,
+    subscriptions whose Mastodon `alerts` map disables the corresponding alert
+    type are skipped.
+  - `:from_id` - the id of the account that triggered the notification. Used to
+    enforce each subscription's `policy` (`all` / `followed` / `follower` / `none`).
   """
   def send_web_push(user_ids, message, opts \\ [])
       when is_list(user_ids) or is_binary(user_ids) do
     ids = List.wrap(user_ids)
 
-    # First try direct lookup by user_id
-    direct_subscriptions =
-      get_subscriptions(ids)
-      |> Map.values()
-      |> List.flatten()
-
     subscriptions =
-      if direct_subscriptions != [] do
-        # FIXME: what if some ids matched and others didn't?
-        debug(direct_subscriptions, "found subscriptions by user_id")
-        direct_subscriptions
-      else
-        # If no direct matches, try resolving as notification feed IDs
-        # FIXME: we shouldn't simply notify all users that feed IDs belong to, instead taking into alerts categories somehow
-        resolved_user_ids = resolve_feed_ids_to_user_ids(ids)
-        debug(resolved_user_ids, "resolved feed IDs to user IDs")
-
-        if resolved_user_ids != [] do
-          get_subscriptions(resolved_user_ids)
-          |> Map.values()
-          |> List.flatten()
-        else
-          []
-        end
-      end
+      ids
+      |> load_subscription_pairs()
+      |> filter_pairs_by_preferences(opts)
+      |> Enum.map(fn {user_sub, push_sub} ->
+        PushSubscription.to_ex_nudge_subscription(push_sub, user_sub.id)
+      end)
 
     case subscriptions do
       [] ->
@@ -189,6 +192,68 @@ defmodule Bonfire.Notify.WebPush do
         send_web_push_to_subscriptions(subscriptions, message, opts)
     end
   end
+
+  # Loads {user_sub, push_sub} pairs for the given ids, treating them first as
+  # user ids and falling back to resolving them as notification feed ids.
+  defp load_subscription_pairs(ids) do
+    case list_subscriptions_with_push(ids) do
+      [] ->
+        ids
+        |> resolve_feed_ids_to_user_ids()
+        |> debug("resolved feed IDs to user IDs")
+        |> list_subscriptions_with_push()
+
+      pairs ->
+        pairs
+    end
+  end
+
+  # Filters {user_sub, push_sub} pairs by each subscription's Mastodon alerts/policy.
+  defp filter_pairs_by_preferences(pairs, opts) do
+    alert_key = opts[:notify_category] && masto_alert_key(opts[:notify_category])
+    from_id = opts[:from_id] && Bonfire.Common.Enums.id(opts[:from_id])
+
+    Enum.filter(pairs, fn {user_sub, _push_sub} ->
+      passes_alerts?(user_sub, alert_key) and passes_policy?(user_sub, from_id)
+    end)
+  end
+
+  # Unknown/absent category -> don't block (we can't map it to an alert type).
+  defp passes_alerts?(_user_sub, nil), do: true
+
+  defp passes_alerts?(user_sub, alert_key) do
+    PushSubscription.effective_alerts(user_sub.alerts)
+    |> Map.get(alert_key, true) == true
+  end
+
+  defp passes_policy?(user_sub, from_id) do
+    case PushSubscription.effective_policy(user_sub.policy) do
+      "all" -> true
+      "none" -> false
+      # `followed`: only from accounts the recipient follows
+      "followed" -> from_id != nil and follows?(user_sub.id, from_id)
+      # `follower`: only from accounts that follow the recipient
+      "follower" -> from_id != nil and follows?(from_id, user_sub.id)
+      _ -> true
+    end
+  end
+
+  defp follows?(subject_id, object_id) do
+    !!Bonfire.Common.Utils.maybe_apply(
+      Bonfire.Social.Graph.Follows,
+      :following?,
+      [subject_id, object_id],
+      fallback_return: false
+    )
+  end
+
+  # Maps a Bonfire notify_category to the Mastodon push `alerts` key.
+  defp masto_alert_key(:likes), do: "favourite"
+  defp masto_alert_key(:boosts), do: "reblog"
+  defp masto_alert_key(:follows), do: "follow"
+  defp masto_alert_key(:messages), do: "mention"
+  defp masto_alert_key(:replies_and_mentions), do: "mention"
+  defp masto_alert_key(_), do: nil
 
   @doc """
   Resolves notification feed IDs to user IDs by querying the Character table.
@@ -211,8 +276,13 @@ defmodule Bonfire.Notify.WebPush do
   defp send_web_push_to_subscriptions(subscriptions, message, opts)
        when is_list(subscriptions) and subscriptions != [] do
     debug(message, "sending push to #{length(subscriptions)} subscriptions")
-    # Default TTL to 24 hours so offline devices receive notifications when they reconnect
-    opts = Keyword.put_new(opts, :ttl, 86_400)
+    # Default TTL to 24 hours so offline devices receive notifications when they reconnect.
+    # Drop our own filtering opts so only ExNudge-understood opts are forwarded.
+    opts =
+      opts
+      |> Keyword.drop([:notify_category, :from_id])
+      |> Keyword.put_new(:ttl, 86_400)
+
     results = ex_nudge_module().send_notifications(subscriptions, message, opts)
 
     # Update subscription statuses based on results

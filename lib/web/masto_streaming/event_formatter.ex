@@ -28,17 +28,9 @@ defmodule Bonfire.Notify.MastoStreaming.EventFormatter do
   Returns `{:ok, json_string}` or `:skip` if the activity can't be mapped.
   """
   def format_update(activity, opts \\ []) do
-    mapper_opts = Keyword.merge(opts, lightweight: true)
-
-    case Mappers.Status.from_activity(activity, mapper_opts) do
-      status when is_map(status) and map_size(status) > 0 ->
-        status =
-          Helpers.deep_struct_to_map(status, filter_nils: true, drop_unknown_structs: true)
-
-        if status["id"], do: {:ok, Jason.encode!(status)}, else: :skip
-
-      _ ->
-        :skip
+    case lightweight_status_map(activity, opts) do
+      %{"id" => id} = status when not is_nil(id) -> {:ok, Jason.encode!(status)}
+      _ -> :skip
     end
   rescue
     e ->
@@ -71,21 +63,9 @@ defmodule Bonfire.Notify.MastoStreaming.EventFormatter do
       # Add status inline for notification types that include one (no encode→decode round-trip)
       notification =
         if notification_type in ~w(mention status reblog favourite poll update) do
-          mapper_opts = Keyword.merge(opts, lightweight: true)
-
-          case Mappers.Status.from_activity(activity, mapper_opts) do
-            status when is_map(status) and map_size(status) > 0 ->
-              Map.put(
-                notification,
-                "status",
-                Helpers.deep_struct_to_map(status,
-                  filter_nils: true,
-                  drop_unknown_structs: true
-                )
-              )
-
-            _ ->
-              notification
+          case lightweight_status_map(activity, opts) do
+            nil -> notification
+            status -> Map.put(notification, "status", status)
           end
         else
           notification
@@ -104,17 +84,66 @@ defmodule Bonfire.Notify.MastoStreaming.EventFormatter do
   @doc """
   Format a conversation event using the Mastodon Conversation entity shape.
 
+  Accepts either a bare `thread_id` or a `%{thread_id:, activity:}` map (as
+  broadcast by `Bonfire.Social.LivePush`). When the message activity is present,
+  the `last_status` and the participating `account` are populated from it.
+
   Returns `{:ok, json_string}`.
   """
-  def format_conversation(thread_id, _opts \\ []) do
-    conversation = %{
-      "id" => to_string(thread_id),
-      "accounts" => [],
-      "unread" => true,
-      "last_status" => nil
-    }
+  def format_conversation(thread_id_or_data, opts \\ [])
+
+  def format_conversation(%{thread_id: thread_id} = data, opts) do
+    activity = Map.get(data, :activity)
+    build_conversation(thread_id, activity, opts)
+  end
+
+  def format_conversation(thread_id, opts) do
+    build_conversation(thread_id, nil, opts)
+  end
+
+  defp build_conversation(thread_id, activity, opts) do
+    conversation =
+      minimal_conversation(thread_id)
+      |> Map.put("last_status", activity && lightweight_status_map(activity, opts))
+      |> Map.put("accounts", conversation_accounts(activity))
 
     {:ok, Jason.encode!(conversation)}
+  rescue
+    e ->
+      error(e, "EventFormatter.format_conversation failed")
+      # Fall back to the minimal shape so the client still gets a valid frame
+      {:ok, Jason.encode!(minimal_conversation(thread_id))}
+  end
+
+  defp minimal_conversation(thread_id) do
+    %{"id" => to_string(thread_id), "accounts" => [], "unread" => true, "last_status" => nil}
+  end
+
+  defp conversation_accounts(nil), do: []
+
+  defp conversation_accounts(activity) do
+    case e(activity, :subject, nil) do
+      nil ->
+        []
+
+      subject ->
+        Mappers.Account.from_user(subject, skip_expensive_stats: true)
+        |> Helpers.deep_struct_to_map(filter_nils: true, drop_unknown_structs: true)
+        |> List.wrap()
+    end
+  end
+
+  # Maps an activity to a lightweight Mastodon Status map (no DB queries), or nil.
+  defp lightweight_status_map(activity, opts) do
+    mapper_opts = Keyword.merge(opts, lightweight: true)
+
+    case Mappers.Status.from_activity(activity, mapper_opts) do
+      status when is_map(status) and map_size(status) > 0 ->
+        Helpers.deep_struct_to_map(status, filter_nils: true, drop_unknown_structs: true)
+
+      _ ->
+        nil
+    end
   end
 
   @doc """

@@ -646,6 +646,70 @@ defmodule Bonfire.Notify.Web.MastoStreamingWebSocketTest do
     end
   end
 
+  # --- Delete event propagation ---
+
+  describe "handle_info hide_activity (delete events)" do
+    test "emits a delete frame on the matching stream", %{token: token} do
+      {:ok, state} = init_ws(token)
+
+      {:ok, state} =
+        WS.handle_in(
+          {Jason.encode!(%{"type" => "subscribe", "stream" => "public"}), [opcode: :text]},
+          state
+        )
+
+      public_topic = state.subscriptions["public"]
+      assert public_topic
+
+      msg =
+        {{Bonfire.Social.Feeds, :hide_activity},
+         [feed_ids: List.wrap(public_topic), activity_id: "act_xyz"]}
+
+      {:push, {:text, frame}, _state} = WS.handle_info(msg, state)
+      decoded = Jason.decode!(frame)
+
+      assert decoded["event"] == "delete"
+      assert decoded["payload"] == "act_xyz"
+      assert decoded["stream"] == ["public"]
+    end
+
+    test "does not emit when the deletion's feed doesn't match a subscription", %{token: token} do
+      {:ok, state} = init_ws(token)
+
+      {:ok, state} =
+        WS.handle_in(
+          {Jason.encode!(%{"type" => "subscribe", "stream" => "public"}), [opcode: :text]},
+          state
+        )
+
+      msg =
+        {{Bonfire.Social.Feeds, :hide_activity},
+         [feed_ids: [Needle.ULID.generate()], activity_id: "act_xyz"]}
+
+      assert {:ok, ^state} = WS.handle_info(msg, state)
+    end
+
+    test "bare activity-id payload emits on every subscribed stream", %{token: token} do
+      {:ok, state} = init_ws(token)
+
+      {:ok, state} =
+        WS.handle_in(
+          {Jason.encode!(%{"type" => "subscribe", "stream" => "public"}), [opcode: :text]},
+          state
+        )
+
+      # older broadcast shape: just the activity id
+      msg = {{Bonfire.Social.Feeds, :hide_activity}, "act_bare"}
+
+      {:push, {:text, frame}, _state} = WS.handle_info(msg, state)
+      decoded = Jason.decode!(frame)
+
+      assert decoded["event"] == "delete"
+      assert decoded["payload"] == "act_bare"
+      assert decoded["stream"] == ["public"]
+    end
+  end
+
   # --- EventFormatter unit tests ---
 
   describe "EventFormatter.to_ws_frame/3" do
@@ -696,6 +760,58 @@ defmodule Bonfire.Notify.Web.MastoStreamingWebSocketTest do
       assert_valid_conversation(conversation)
       assert conversation["id"] == "thread_123"
       assert conversation["unread"] == true
+    end
+
+    test "data map without an activity still produces a valid (empty) conversation" do
+      {:ok, payload} = EventFormatter.format_conversation(%{thread_id: "thread_x", activity: nil})
+      conversation = Jason.decode!(payload)
+
+      assert_valid_conversation(conversation)
+      assert conversation["id"] == "thread_x"
+      assert conversation["accounts"] == []
+      assert conversation["last_status"] == nil
+    end
+
+    test "populates last_status and account when the message activity is present", %{
+      me: me,
+      token: token
+    } do
+      # Subscribe the test process to a feed topic so it receives the broadcast
+      {:ok, state} = init_ws(token)
+
+      {:ok, _state} =
+        WS.handle_in(
+          {Jason.encode!(%{"type" => "subscribe", "stream" => "public"}), [opcode: :text]},
+          state
+        )
+
+      {:ok, _post} =
+        Bonfire.Posts.publish(
+          current_user: me,
+          post_attrs: %{post_content: %{html_body: "<p>dm body</p>"}},
+          boundary: "public"
+        )
+
+      receive do
+        {{Bonfire.Social.Feeds, :new_activity}, data} ->
+          activity = data[:activity]
+
+          {:ok, payload} =
+            EventFormatter.format_conversation(%{thread_id: "thread_dm", activity: activity},
+              current_user: me
+            )
+
+          conversation = Jason.decode!(payload)
+
+          assert_valid_conversation(conversation)
+          assert conversation["id"] == "thread_dm"
+          assert is_map(conversation["last_status"])
+          assert is_binary(conversation["last_status"]["id"])
+          assert [account | _] = conversation["accounts"]
+          assert is_binary(account["id"])
+      after
+        5_000 -> flunk("No :new_activity broadcast received within 5s")
+      end
     end
   end
 

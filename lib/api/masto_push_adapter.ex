@@ -42,23 +42,18 @@ defmodule Bonfire.Notify.API.MastoPushAdapter do
         {:ok, parsed_attrs} ->
           user_id = id(current_user)
 
-          # Per Mastodon spec: creating a new subscription replaces the old one
-          WebPush.delete_all_for_user(user_id)
-
           device_attrs =
             parsed_attrs
             |> Map.take([:endpoint, :auth_key, :p256dh_key])
             |> maybe_add_device_info(conn)
 
-          with {:ok, push_sub} <- PushSubscription.find_or_create_by_endpoint(device_attrs) do
-            user_attrs =
-              Map.take(parsed_attrs, [:alerts, :policy])
-              |> Map.put(:push_subscription_id, push_sub.id)
+          user_attrs = Map.take(parsed_attrs, [:alerts, :policy])
 
-            %UserPushSubscription{id: user_id}
-            |> UserPushSubscription.changeset(user_attrs)
-            |> repo().insert()
-            |> respond_with_subscription(push_sub, conn)
+          # Per Mastodon spec, creating a subscription replaces the one *for this
+          # endpoint* (upsert), leaving the user's other devices untouched.
+          with {:ok, push_sub} <- PushSubscription.find_or_create_by_endpoint(device_attrs),
+               {:ok, user_sub} <- WebPush.upsert_user_link(user_id, push_sub.id, user_attrs) do
+            respond_with_subscription({:ok, user_sub}, push_sub, conn)
           else
             {:error, reason} ->
               RestAdapter.error_fn({:error, inspect(reason)}, conn)

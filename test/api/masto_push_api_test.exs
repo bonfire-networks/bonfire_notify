@@ -142,6 +142,27 @@ defmodule Bonfire.Notify.Web.MastoPushApiTest do
       assert second_response["alerts"]["mention"] == false
     end
 
+    test "registering a second device keeps the first (multi-device)", %{conn: conn, user: user} do
+      endpoint_a = "https://push.example.com/device-a-#{Faker.UUID.v4()}"
+      endpoint_b = "https://push.example.com/device-b-#{Faker.UUID.v4()}"
+
+      resp_a = create_subscription(conn, endpoint: endpoint_a)
+      resp_b = create_subscription(conn, endpoint: endpoint_b)
+
+      # Distinct subscriptions, not a replacement
+      refute resp_a["id"] == resp_b["id"]
+      assert resp_a["endpoint"] == endpoint_a
+      assert resp_b["endpoint"] == endpoint_b
+
+      # Both device links persist for the user
+      endpoints =
+        Bonfire.Notify.WebPush.list_subscriptions(user.id)
+        |> Enum.map(& &1.push_subscription.endpoint)
+        |> Enum.sort()
+
+      assert Enum.sort([endpoint_a, endpoint_b]) == endpoints
+    end
+
     test "returns 401 without authorization", %{} do
       response =
         unauthenticated_conn()

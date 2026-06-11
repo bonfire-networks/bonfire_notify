@@ -98,13 +98,15 @@ defmodule Bonfire.Notify do
 
   defp send_push_notifications(object, subscribers) do
     creator = Map.get(object, :creator, %{})
-    creator_id = uid(creator)
+    # `from_id` identifies the account that triggered the notification, used by
+    # WebPush to enforce each subscription's policy (followed/follower/none).
+    from_id = Map.get(object, :from_id) || uid(creator)
     category = Map.get(object, :notify_category)
 
     user_ids =
       subscribers
       |> Enum.map(&uid/1)
-      |> Enum.reject(&(is_nil(&1) or &1 == creator_id))
+      |> Enum.reject(&(is_nil(&1) or &1 == from_id))
       |> filter_by_push_preferences(category)
 
     debug(user_ids, "📨 User IDs after filtering")
@@ -113,7 +115,9 @@ defmodule Bonfire.Notify do
       message = format_message_from(object, creator)
       debug(message, "📨 Formatted push message JSON")
 
-      result = WebPush.send_web_push(user_ids, message)
+      result =
+        WebPush.send_web_push(user_ids, message, notify_category: category, from_id: from_id)
+
       debug(result, "📨 WebPush.send_web_push result")
       result
     else
