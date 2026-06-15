@@ -78,14 +78,45 @@ defmodule Bonfire.Notify.Web.StreamingController do
       if messages_feed_id,
         do: Phoenix.PubSub.subscribe(Bonfire.Common.PubSub, to_string(messages_feed_id))
 
-      stream_loop(conn)
+      # Also follow the unseen-count signals for the notifications feed so the
+      # native app can keep its app-icon badge in sync.
+      if feed_id,
+        do: Phoenix.PubSub.subscribe(Bonfire.Common.PubSub, "unseen_count:#{feed_id}")
+
+      # Push an authoritative starting count so the badge is correct on connect
+      # (not just after the next change).
+      initial_count = unseen_notifications_count(feed_id, current_user)
+
+      case send_unseen_count(conn, initial_count) do
+        {:ok, conn} -> stream_loop(conn, initial_count)
+        {:error, :closed} -> conn
+      end
     else
       err("[SSE] Could not resolve notification feed_id for user, closing")
       conn
     end
   end
 
-  defp stream_loop(conn) do
+  defp unseen_notifications_count(nil, _current_user), do: 0
+
+  defp unseen_notifications_count(feed_id, current_user) do
+    Bonfire.Common.Utils.maybe_apply(
+      Bonfire.Social.FeedActivities,
+      :unseen_count,
+      [feed_id, [current_user: current_user]]
+    )
+    |> case do
+      count when is_integer(count) and count >= 0 -> count
+      _ -> 0
+    end
+  end
+
+  defp send_unseen_count(conn, count) do
+    event = Jason.encode!(%{count: count})
+    Plug.Conn.chunk(conn, "event: unseen_count\ndata: #{event}\n\n")
+  end
+
+  defp stream_loop(conn, unseen_count) do
     receive do
       :stop_streaming ->
         debug("[SSE] Received :stop_streaming, closing connection")
@@ -104,7 +135,7 @@ defmodule Bonfire.Notify.Web.StreamingController do
 
         case Plug.Conn.chunk(conn, "event: notification\ndata: #{event}\n\n") do
           {:ok, conn} ->
-            stream_loop(conn)
+            stream_loop(conn, unseen_count)
 
           {:error, :closed} ->
             debug("[SSE] Client disconnected while sending notification")
@@ -117,37 +148,57 @@ defmodule Bonfire.Notify.Web.StreamingController do
 
         case Plug.Conn.chunk(conn, "event: message\ndata: #{event}\n\n") do
           {:ok, conn} ->
-            stream_loop(conn)
+            stream_loop(conn, unseen_count)
 
           {:error, :closed} ->
             debug("[SSE] Client disconnected while sending message")
             conn
         end
 
+      # Unseen-count signals for the notifications feed (mirror what the web
+      # BadgeCounterLive does): +1 on a new notification, 0 when marked seen.
+      # Forward the running total so the native app can set its icon badge.
+      {{Bonfire.Social.Feeds, :count_increment}, _data} ->
+        forward_unseen_count(conn, unseen_count + 1)
+
+      {{Bonfire.Social.Feeds, :count_reset}, _data} ->
+        forward_unseen_count(conn, 0)
+
       # Feed activity updates (from LivePush) — not relevant for SSE clients
       {{Bonfire.Social.Feeds, _action}, _data} ->
-        stream_loop(conn)
+        stream_loop(conn, unseen_count)
 
       # same with thread live updates
       {{Bonfire.Social.Threads.LiveHandler, _action}, _data} ->
-        stream_loop(conn)
+        stream_loop(conn, unseen_count)
 
       {:plug_conn, :sent} ->
-        stream_loop(conn)
+        stream_loop(conn, unseen_count)
 
       other ->
         err(other, "[SSE] Ignoring unhandled message")
-        stream_loop(conn)
+        stream_loop(conn, unseen_count)
     after
       @heartbeat_interval_ms ->
         case Plug.Conn.chunk(conn, ": heartbeat\n\n") do
           {:ok, conn} ->
-            stream_loop(conn)
+            stream_loop(conn, unseen_count)
 
           {:error, :closed} ->
             debug("[SSE] Client disconnected during heartbeat")
             conn
         end
+    end
+  end
+
+  defp forward_unseen_count(conn, count) do
+    case send_unseen_count(conn, count) do
+      {:ok, conn} ->
+        stream_loop(conn, count)
+
+      {:error, :closed} ->
+        debug("[SSE] Client disconnected while sending unseen_count")
+        conn
     end
   end
 end
