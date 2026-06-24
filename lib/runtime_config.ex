@@ -25,7 +25,7 @@ defmodule Bonfire.Notify.RuntimeConfig do
 
     config :ex_nudge,
       vapid_public_key: System.get_env("WEB_PUSH_PUBLIC_KEY"),
-      vapid_private_key: System.get_env("WEB_PUSH_PRIVATE_KEY"),
+      vapid_private_key: Bonfire.Common.EnvSecrets.env_or_file("WEB_PUSH_PRIVATE_KEY"),
       vapid_subject: System.get_env("WEB_PUSH_SUBJECT", "https://bonfire.cafe")
   end
 end
