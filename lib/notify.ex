@@ -3,7 +3,7 @@ defmodule Bonfire.Notify do
   Public API for sending notifications.
 
   This module provides a simple entrypoint that delegates to the underlying
-  notification system (WebPush for push notifications, LivePush for in-app notifications).
+  notification system (WebPush/native push for push notifications, LivePush for in-app notifications).
   """
 
   use Application
@@ -11,6 +11,7 @@ defmodule Bonfire.Notify do
   import Untangle
   import Ecto.Query
 
+  alias Bonfire.Notify.NativePush
   alias Bonfire.Notify.WebPush
 
   def start(_, _) do
@@ -88,10 +89,10 @@ defmodule Bonfire.Notify do
     debug(object, "📨 Bonfire.Notify.notify called with object")
     debug(subscribers, "📨 Subscribers")
 
-    if enabled?() do
+    if enabled?() or NativePush.configured?() do
       send_push_notifications(object, subscribers)
     else
-      error("📨 Web push disabled - VAPID keys not configured")
+      error("📨 Push disabled - no web or native push configuration")
       {:error, :disabled}
     end
   end
@@ -116,9 +117,9 @@ defmodule Bonfire.Notify do
       debug(message, "📨 Formatted push message JSON")
 
       result =
-        WebPush.send_web_push(user_ids, message, notify_category: category, from_id: from_id)
+        send_to_push_channels(user_ids, message, notify_category: category, from_id: from_id)
 
-      debug(result, "📨 WebPush.send_web_push result")
+      debug(result, "📨 push delivery result")
       result
     else
       debug("📨 no_valid_recipients: No valid user IDs after filtering")
@@ -145,6 +146,30 @@ defmodule Bonfire.Notify do
       &Bonfire.Common.Settings.get([:push_notifications, category], true, context: &1)
     )
     |> Enum.map(&uid/1)
+  end
+
+  defp send_to_push_channels(user_ids, message, opts) do
+    web_result =
+      if enabled?() do
+        WebPush.send_web_push(user_ids, message, opts)
+      else
+        {:error, :disabled}
+      end
+
+    native_result =
+      if NativePush.configured?() do
+        NativePush.send_native_push(user_ids, message, opts)
+      else
+        {:error, :native_push_not_configured}
+      end
+
+    debug(native_result, "📨 NativePush.send_native_push result")
+
+    if enabled?() do
+      web_result
+    else
+      native_result
+    end
   end
 
   defp format_message_from(%{title: title, message: body} = assigns, _creator) do
@@ -197,9 +222,9 @@ defmodule Bonfire.Notify do
   @doc """
   Sends push notifications to specific user IDs.
 
-  This is a convenience wrapper around `WebPush.send_web_push/3`.
+  This is a convenience wrapper around configured push channels.
   """
   def push_to_users(user_ids, message, opts \\ []) when is_list(user_ids) do
-    WebPush.send_web_push(user_ids, message, opts)
+    send_to_push_channels(user_ids, message, opts)
   end
 end

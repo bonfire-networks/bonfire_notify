@@ -28,6 +28,9 @@ defmodule Bonfire.Notify.Migrations do
     require Bonfire.Notify.UserPushSubscription.Migration
     Bonfire.Notify.UserPushSubscription.Migration.migrate_user_push_subscription(:up)
 
+    require Bonfire.Notify.NativePushDevice.Migration
+    Bonfire.Notify.NativePushDevice.Migration.migrate_native_push_device(:up)
+
     execute("""
     CREATE TYPE notification_event AS ENUM (
       'CREATED',
@@ -39,6 +42,9 @@ defmodule Bonfire.Notify.Migrations do
   end
 
   def down do
+    require Bonfire.Notify.NativePushDevice.Migration
+    Bonfire.Notify.NativePushDevice.Migration.migrate_native_push_device(:down)
+
     require Bonfire.Notify.UserPushSubscription.Migration
     Bonfire.Notify.UserPushSubscription.Migration.migrate_user_push_subscription(:down)
 

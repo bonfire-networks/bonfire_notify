@@ -184,13 +184,15 @@ defmodule Bonfire.Notify.Web.StreamingControllerTest do
       assert chunks =~ "event: notification\n"
       assert chunks =~ "data: "
 
-      [_, json_part] = String.split(chunks, "data: ", parts: 2)
-      decoded = Jason.decode!(String.trim(json_part))
+      events = parse_sse_events(chunks)
 
-      assert decoded["title"] == "New mention"
-      assert decoded["body"] == "Alice mentioned you"
-      assert decoded["url"] == "/post/42"
-      assert decoded["icon"] == "https://example.com/avatar.png"
+      assert Enum.any?(events, fn {type, data} ->
+               type == "notification" and
+                 data["title"] == "New mention" and
+                 data["body"] == "Alice mentioned you" and
+                 data["url"] == "/post/42" and
+                 data["icon"] == "https://example.com/avatar.png"
+             end)
     end
 
     test "formats DM as SSE event: message with thread_id", %{me: me} do
@@ -207,11 +209,13 @@ defmodule Bonfire.Notify.Web.StreamingControllerTest do
 
       assert chunks =~ "event: message\n"
 
-      [_, json_part] = String.split(chunks, "data: ", parts: 2)
-      decoded = Jason.decode!(String.trim(json_part))
+      events = parse_sse_events(chunks)
 
-      assert decoded["type"] == "message"
-      assert decoded["thread_id"] == "thread_xyz"
+      assert Enum.any?(events, fn {type, data} ->
+               type == "message" and
+                 data["type"] == "message" and
+                 data["thread_id"] == "thread_xyz"
+             end)
     end
   end
 
