@@ -8,7 +8,7 @@
         </span>
         <div>
           <p class="text-sm font-medium">{l("Install as app")}</p>
-          <p class="text-xs text-base-content/70">{l("Add to your home screen for quick access")}</p>
+          <p class="text-xs text-base-content">{l("Add to your home screen for quick access")}</p>
         </div>
       </div>
       <button id="pwa-install-btn" type="button" class="btn btn-success btn-sm gap-1.5">
@@ -24,7 +24,7 @@
     class="flex items-center gap-3 p-3 rounded-xl bg-warning/10 border border-warning/20 mb-4"
   >
     <#Icon iconify="ph:warning-duotone" class="size-5 text-warning flex-shrink-0" />
-    <span class="text-sm text-base-content/70">{l("Push notifications are not supported in this browser")}</span>
+    <span class="text-sm text-base-content">{l("Push notifications are not supported in this browser")}</span>
   </div>
 
   <div
@@ -32,7 +32,7 @@
     class="flex items-center gap-3 p-3 rounded-xl bg-info/10 border border-info/20 mb-4"
   >
     <#Icon iconify="ph:info-duotone" class="size-5 text-info flex-shrink-0" />
-    <span class="text-sm text-base-content/70">{l("Push notifications are not configured on this instance")}</span>
+    <span class="text-sm text-base-content">{l("Push notifications are not configured on this instance")}</span>
   </div>
 
   <div :if={@vapid_public_key && @push_supported}>
@@ -46,13 +46,13 @@
         <span class={
           "flex items-center justify-center w-8 h-8 rounded-lg",
           "bg-primary/20 text-primary": @current_device_subscribed,
-          "bg-base-content/10 text-base-content/60": !@current_device_subscribed
+          "bg-base-content/10 text-muted": !@current_device_subscribed
         }>
           <#Icon iconify="ph:bell-duotone" class="size-4" />
         </span>
         <div>
           <p class="text-sm font-medium">{l("Push notifications")}</p>
-          <p class="text-xs text-base-content/70">
+          <p class="text-xs text-base-content">
             {#if @current_device_subscribed}
               {l("Enabled on this device")}
             {#else}
@@ -83,7 +83,7 @@
 
     {!-- Notification type preferences --}
     <div :if={@current_device_subscribed} class="mt-4">
-      <p class="text-xs font-medium text-base-content/60 uppercase tracking-wider mb-2 px-1">{l("Notify me about")}</p>
+      <p class="text-xs font-medium text-muted uppercase tracking-wider mb-2 px-1">{l("Notify me about")}</p>
       <form phx-change="Bonfire.Common.Settings:set">
         <div class="divide-y divide-base-content/5">
           <label class="flex items-center justify-between py-2.5 cursor-pointer group">
@@ -162,7 +162,7 @@
 
     {!-- Registered devices --}
     <div :if={@subscriptions != []} class="mt-4">
-      <p class="text-xs font-medium text-base-content/60 uppercase tracking-wider mb-2 px-1">{l("Devices")}</p>
+      <p class="text-xs font-medium text-muted uppercase tracking-wider mb-2 px-1">{l("Devices")}</p>
       <div class="space-y-1.5">
         {#for sub <- @subscriptions}
           {#case {browser_from_endpoint(sub.push_subscription.endpoint),
@@ -177,7 +177,7 @@
                   <span class={
                     "flex items-center justify-center w-8 h-8 rounded-lg",
                     "bg-primary/15 text-primary": is_current,
-                    "bg-base-content/5 text-base-content/60": !is_current
+                    "bg-base-content/5 text-muted": !is_current
                   }>
                     <#Icon iconify="ph:globe-duotone" class="size-4" />
                   </span>
@@ -189,7 +189,7 @@
                         {l("This device")}
                       </span>
                     </p>
-                    <p class="text-xs text-base-content/60">
+                    <p class="text-xs text-muted">
                       <span :if={sub.push_subscription.last_used_at}>
                         {Bonfire.Common.DatesTimes.date_from_now(sub.push_subscription.last_used_at)}</span>
                       <span :if={sub.push_subscription.last_status == :error} class="text-error">
