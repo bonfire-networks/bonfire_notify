@@ -29,7 +29,7 @@ defmodule Bonfire.Notify do
   end
 
   declare_extension(
-    "Notifications",
+    l("Notifications"),
     icon: "ph:device-mobile",
     description: l("Manage your notification settings and registered devices")
   )
