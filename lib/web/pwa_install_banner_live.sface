@@ -16,7 +16,7 @@
           class="w-9 h-9 rounded-xl flex-shrink-0"
         />
         <div class="flex-1 min-w-0">
-          <p class="text-sm font-semibold leading-tight">{l("Install %{name}",
+          <p class="text-sm font-medium leading-tight">{l("Install %{name}",
               name: Config.get([:ui, :theme, :instance_name], Bonfire.Application.name_and_flavour())
             )}</p>
           <p class="text-xs text-base-content/50 leading-tight mt-0.5">{l("Get the full app experience")}</p>
