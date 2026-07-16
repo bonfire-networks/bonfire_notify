@@ -178,7 +178,8 @@ defmodule Bonfire.Notify do
       title,
       body || "New notification",
       url: assigns[:url],
-      tag: assigns[:tag]
+      tag: assigns[:tag],
+      icon: assigns[:icon]
     )
   end
 
@@ -206,13 +207,21 @@ defmodule Bonfire.Notify do
         Text.text_only(e(object, :post_content, :html_body, "")) ||
         "New notification"
 
+    avatar = Media.avatar_url(creator)
+
+    icon =
+      if is_binary(avatar) and avatar != Media.avatar_fallback(),
+        do: avatar,
+        else: Config.get([:ui, :theme, :instance_icon], nil)
+
     WebPush.format_push_message(
       title,
       body,
       Keyword.merge(
         [
           url: e(object, :canonical_url, nil) || e(object, :url, nil),
-          tag: e(object, :id, nil)
+          tag: e(object, :id, nil),
+          icon: icon
         ],
         opts
       )

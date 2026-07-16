@@ -411,6 +411,7 @@ defmodule Bonfire.Notify.WebPush do
     Jason.encode!(%{
       title: title,
       body: body,
+      icon: opts[:icon],
       tag: opts[:tag],
       requireInteraction: opts[:require_interaction] || false,
       data: %{url: opts[:url]}
