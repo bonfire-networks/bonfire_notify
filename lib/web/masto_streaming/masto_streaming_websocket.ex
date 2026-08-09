@@ -396,11 +396,12 @@ defmodule Bonfire.Notify.Web.MastoStreamingWebSocket do
         |> List.wrap()
 
       "public" ->
-        Bonfire.Common.Utils.maybe_apply(Bonfire.Social.Feeds, :named_feed_id, [:guest])
+        # legacy ∪ bucket union (composition in the Feeds context) so addressed posts stream too
+        Bonfire.Common.Utils.maybe_apply(Bonfire.Social.Feeds, :named_feed_ids, [:public])
         |> List.wrap()
 
       "public:local" ->
-        Bonfire.Common.Utils.maybe_apply(Bonfire.Social.Feeds, :named_feed_id, [:local])
+        Bonfire.Common.Utils.maybe_apply(Bonfire.Social.Feeds, :named_feed_ids, [:local])
         |> List.wrap()
 
       # Media variants map to same topics (media filtering is a TODO)
@@ -412,7 +413,7 @@ defmodule Bonfire.Notify.Web.MastoStreamingWebSocket do
 
       # Remote/federated feed
       "public:remote" ->
-        Bonfire.Common.Utils.maybe_apply(Bonfire.Social.Feeds, :named_feed_id, [:activity_pub])
+        Bonfire.Common.Utils.maybe_apply(Bonfire.Social.Feeds, :named_feed_ids, [:remote])
         |> List.wrap()
 
       "public:remote:media" ->
