@@ -195,7 +195,12 @@ defmodule Bonfire.Notify.LiveHandler do
       {:noreply,
        socket
        |> Bonfire.UI.Common.SmartInput.LiveHandler.reset_input()
-       |> assign_flash(:info, l("Announcement sent to %{count} users!", count: count))}
+       |> assign_flash(
+         :info,
+         lp("Announcement sent to %{count} user!", "Announcement sent to %{count} users!", count,
+           count: count
+         )
+       )}
     else
       e ->
         error(e, "Could not send announcement")
