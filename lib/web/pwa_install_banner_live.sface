@@ -1,7 +1,7 @@
 <div
   id="pwa-install-banner"
   phx-hook="PWAInstallBannerHook"
-  class="hidden fixed bottom-0 inset-x-0 z-[99999999999999] p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]"
+  class="hidden fixed dock-safe-bottom inset-x-0 z-[99999999999999] p-3"
 >
   {!-- Gradient border wrapper --}
   <div
