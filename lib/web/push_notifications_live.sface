@@ -82,6 +82,7 @@
     </div>
 
     {!-- Notification type preferences --}
+    {!-- 
     <div :if={@current_device_subscribed} class="mt-4">
       <p class="text-xs font-medium text-muted uppercase tracking-wider mb-2 px-1">{l("Notify me about")}</p>
       <form phx-change="Bonfire.Common.Settings:set">
@@ -159,6 +160,7 @@
         </div>
       </form>
     </div>
+    --}
 
     {!-- Registered devices --}
     <div :if={@subscriptions != []} class="mt-4">
