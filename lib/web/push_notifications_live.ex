@@ -8,11 +8,13 @@ defmodule Bonfire.Notify.Settings.PushNotificationsLive do
 
   use Bonfire.UI.Common.Web, :stateful_component
 
-  declare_settings_component(l("Push Notifications"),
-    icon: "ph:device-mobile",
-    description: l("Manage your push notification settings and registered devices")
-  )
+  # NOTE:not a settings section of its own any more: it is one section of the notification preferences panel, which is what settings now shows (`Bonfire.Notify.Settings.NotificationPreferencesLive` places that panel here). Declaring both would put these same controls on the page twice, each with its own copy of the browser hook
+  # declare_settings_component(l("Push Notifications"),
+  #   icon: "ph:device-mobile",
+  #   description: l("Manage your push notification settings and registered devices")
+  # )
 
+  alias Bonfire.Notify.UserPushSubscription
   alias Bonfire.Notify.WebPush
 
   prop scope, :any, default: nil
@@ -58,11 +60,7 @@ defmodule Bonfire.Notify.Settings.PushNotificationsLive do
   def handle_event("check_subscription", %{"endpoint" => endpoint}, socket) do
     subscriptions = socket.assigns[:subscriptions] || []
 
-    is_subscribed =
-      Enum.any?(subscriptions, fn sub ->
-        push_sub = sub.push_subscription
-        push_sub && push_sub.endpoint == endpoint
-      end)
+    is_subscribed = Enum.any?(subscriptions, &is_current_device?(&1, endpoint))
 
     {:noreply,
      socket
@@ -136,11 +134,11 @@ defmodule Bonfire.Notify.Settings.PushNotificationsLive do
      assign_flash(socket, :error, l("Failed to enable notifications: %{error}", error: error))}
   end
 
-  # Handle remove device — removes the user's link to the push subscription
-  def handle_event("remove_device", %{"id" => push_subscription_id}, socket) do
+  # removes this person's subscription to the device, leaving the device for anyone else who uses it
+  def handle_event("remove_device", %{"id" => push_device_id}, socket) do
     user = current_user(socket.assigns)
 
-    case WebPush.remove_device(id(user), push_subscription_id) do
+    case UserPushSubscription.unsubscribe(id(user), push_device_id) do
       {:ok, _} ->
         user = current_user(socket.assigns)
 
@@ -155,14 +153,9 @@ defmodule Bonfire.Notify.Settings.PushNotificationsLive do
         current_endpoint = socket.assigns[:current_endpoint]
 
         current_device_subscribed =
-          if current_endpoint do
-            Enum.any?(subscriptions, fn sub ->
-              push_sub = sub.push_subscription
-              push_sub && push_sub.endpoint == current_endpoint
-            end)
-          else
-            false
-          end
+          if current_endpoint,
+            do: Enum.any?(subscriptions, &is_current_device?(&1, current_endpoint)),
+            else: false
 
         {:noreply,
          socket
@@ -219,7 +212,7 @@ defmodule Bonfire.Notify.Settings.PushNotificationsLive do
 
   @doc false
   def is_current_device?(sub, current_endpoint) do
-    push_sub = sub.push_subscription
-    push_sub && push_sub.endpoint == current_endpoint
+    device = sub.push_device
+    device && device.address == current_endpoint
   end
 end

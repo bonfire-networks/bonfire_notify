@@ -954,27 +954,14 @@ defmodule Bonfire.Notify.Web.MastoStreamingWebSocketTest do
   # Accepts the return value of publish/like/follow/etc.
   defp load_activity_for({:ok, object}), do: load_activity_for(object)
 
-  defp load_activity_for(%{activity: %{id: _} = activity}) do
-    activity
-    |> Bonfire.Common.Repo.maybe_preload([
-      :verb,
-      subject: [:character, profile: :icon],
-      object: [:post_content, tagged: [tag: [:character, :profile]]]
-    ])
-  end
+  # the streaming socket receives its activities from PubSub, already prepared for rendering by the live push, so preparing them the same way keeps this a test of the formatter. A hand-written preload list is also wrong per verb: a follow's object is a User, which has no `post_content` and nothing tagged
+  defp load_activity_for(%{activity: %{id: _} = activity}),
+    do: Bonfire.Social.LivePush.prepare_activity(activity)
 
   defp load_activity_for(%{id: object_id} = _object) do
     case Bonfire.Social.Activities.read(object_id, skip_boundary_check: true) do
-      {:ok, activity} ->
-        activity
-        |> Bonfire.Common.Repo.maybe_preload([
-          :verb,
-          subject: [:character, profile: :icon],
-          object: [:post_content, tagged: [tag: [:character, :profile]]]
-        ])
-
-      _ ->
-        raise "Could not load activity for object #{object_id}"
+      {:ok, activity} -> Bonfire.Social.LivePush.prepare_activity(activity)
+      _ -> raise "Could not load activity for object #{object_id}"
     end
   end
 end

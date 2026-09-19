@@ -2,8 +2,9 @@ defmodule Bonfire.Notify.WebPushTest do
   use Bonfire.Notify.DataCase, async: true
   use Bonfire.Common.Repo
 
+  alias Bonfire.Notify.PushDevice
   alias Bonfire.Notify.WebPush
-  alias Bonfire.Notify.PushSubscription
+  alias Bonfire.Notify.WebPushDevice
 
   @valid_data %{
     "endpoint" => "https://endpoint.test",
@@ -13,6 +14,8 @@ defmodule Bonfire.Notify.WebPushTest do
     }
   }
 
+  defp device_of(user_sub), do: repo().get!(PushDevice, user_sub.push_device_id)
+
   describe "subscribe/2" do
     test "creates a new subscription from JSON string" do
       user = fake_user!()
@@ -20,15 +23,16 @@ defmodule Bonfire.Notify.WebPushTest do
 
       {:ok, user_sub} = WebPush.subscribe(user.id, json_data)
 
-      # subscribe returns a UserPushSubscription; device data is on PushSubscription
+      # subscribing returns the person's subscription; what the browser sent is on the device
       assert user_sub.id == user.id
-      assert user_sub.push_subscription_id
+      assert user_sub.push_device_id
 
-      push_sub = repo().get!(PushSubscription, user_sub.push_subscription_id)
-      assert push_sub.endpoint == "https://endpoint.test"
-      assert push_sub.auth_key == "test_auth"
-      assert push_sub.p256dh_key == "test_p256dh"
-      assert push_sub.active == true
+      device = device_of(user_sub)
+      assert device.provider == :web
+      assert device.address == "https://endpoint.test"
+      assert device.auth_key == "test_auth"
+      assert device.p256dh_key == "test_p256dh"
+      assert device.active == true
     end
 
     test "creates a new subscription from map" do
@@ -36,26 +40,20 @@ defmodule Bonfire.Notify.WebPushTest do
 
       {:ok, user_sub} = WebPush.subscribe(user.id, @valid_data)
 
-      push_sub = repo().get!(PushSubscription, user_sub.push_subscription_id)
-      assert push_sub.endpoint == "https://endpoint.test"
+      assert device_of(user_sub).address == "https://endpoint.test"
     end
 
-    test "returns existing link on duplicate endpoint for same user" do
+    test "returns the existing subscription on a duplicate endpoint for the same user" do
       user = fake_user!()
 
       {:ok, sub1} = WebPush.subscribe(user.id, @valid_data)
-      original_push_sub_id = sub1.push_subscription_id
+      original_device_id = sub1.push_device_id
 
-      # Update with new keys
       updated_data = put_in(@valid_data, ["keys", "auth"], "new_auth")
       {:ok, sub2} = WebPush.subscribe(user.id, updated_data)
 
-      # Same user link to the same push subscription
-      assert sub2.push_subscription_id == original_push_sub_id
-
-      # PushSubscription keys should be updated
-      push_sub = repo().get!(PushSubscription, original_push_sub_id)
-      assert push_sub.auth_key == "new_auth"
+      assert sub2.push_device_id == original_device_id
+      assert device_of(sub2).auth_key == "new_auth"
     end
 
     test "allows multiple users to share the same endpoint" do
@@ -65,9 +63,8 @@ defmodule Bonfire.Notify.WebPushTest do
       {:ok, sub1} = WebPush.subscribe(user1.id, @valid_data)
       {:ok, sub2} = WebPush.subscribe(user2.id, @valid_data)
 
-      # Both link to the same PushSubscription
-      assert sub1.push_subscription_id == sub2.push_subscription_id
-      # But different users
+      # one device, a subscription each
+      assert sub1.push_device_id == sub2.push_device_id
       assert sub1.id == user1.id
       assert sub2.id == user2.id
     end
@@ -85,39 +82,35 @@ defmodule Bonfire.Notify.WebPushTest do
     end
   end
 
-  describe "get_subscriptions/1" do
-    test "returns subscriptions in ExNudge format" do
+  describe "to_ex_nudge_subscription/2" do
+    test "carries the endpoint, the browser's keys, and who it is for" do
       user = fake_user!()
-      {:ok, _} = WebPush.subscribe(user.id, @valid_data)
+      {:ok, user_sub} = WebPush.subscribe(user.id, @valid_data)
 
-      subscriptions = WebPush.get_subscriptions([user.id])
+      sub = WebPushDevice.to_ex_nudge_subscription(device_of(user_sub), user.id)
 
-      assert %{} = subscriptions
-      assert [%ExNudge.Subscription{} = sub] = subscriptions[user.id]
+      assert %ExNudge.Subscription{} = sub
       assert sub.endpoint == "https://endpoint.test"
       assert sub.keys.auth == "test_auth"
       assert sub.keys.p256dh == "test_p256dh"
       assert sub.metadata.user_id == user.id
     end
+  end
 
-    test "only returns active subscriptions" do
+  describe "list_subscriptions/1" do
+    test "only returns subscriptions to devices that still work" do
       user = fake_user!()
       {:ok, user_sub} = WebPush.subscribe(user.id, @valid_data)
 
-      # Mark the PushSubscription as inactive
-      push_sub = repo().get!(PushSubscription, user_sub.push_subscription_id)
+      assert [_] = WebPush.list_subscriptions([user.id])
 
-      push_sub
-      |> PushSubscription.mark_expired()
-      |> repo().update!()
+      PushDevice.mark_status(device_of(user_sub), {:expired, :gone})
 
-      subscriptions = WebPush.get_subscriptions([user.id])
-      assert subscriptions == %{}
+      assert [] = WebPush.list_subscriptions([user.id])
     end
 
-    test "returns empty map for users with no subscriptions" do
-      user = fake_user!()
-      assert %{} = WebPush.get_subscriptions([user.id])
+    test "returns nothing for users with no subscriptions" do
+      assert [] = WebPush.list_subscriptions([fake_user!().id])
     end
   end
 
@@ -152,58 +145,11 @@ defmodule Bonfire.Notify.WebPushTest do
       user = fake_user!()
       {:ok, _} = WebPush.subscribe(user.id, @valid_data)
 
-      assert %{} != WebPush.get_subscriptions([user.id])
+      assert [_] = WebPush.list_subscriptions([user.id])
 
       WebPush.remove_subscription_by_endpoint("https://endpoint.test")
 
-      assert %{} = WebPush.get_subscriptions([user.id])
-    end
-  end
-
-  describe "resolve_feed_ids_to_user_ids/1" do
-    test "resolves notification feed IDs to user IDs" do
-      user = fake_user!()
-
-      # Get the user's notification feed ID
-      user_with_character = repo().preload(user, :character)
-      notifications_id = user_with_character.character.notifications_id
-
-      # Skip if no notifications_id (shouldn't happen with fake_user but just in case)
-      if notifications_id do
-        resolved_ids = WebPush.resolve_feed_ids_to_user_ids([notifications_id])
-        assert user.id in resolved_ids
-      end
-    end
-
-    test "returns empty list for non-existent feed IDs" do
-      fake_feed_id = Needle.ULID.generate()
-      assert [] = WebPush.resolve_feed_ids_to_user_ids([fake_feed_id])
-    end
-  end
-
-  describe "send_web_push/3 with feed IDs" do
-    test "finds subscriptions when given notification feed IDs instead of user IDs" do
-      user = fake_user!()
-
-      # Create a subscription for the user
-      {:ok, _} = WebPush.subscribe(user.id, @valid_data)
-
-      # Get the user's notification feed ID
-      user_with_character = repo().preload(user, :character)
-      notifications_id = user_with_character.character.notifications_id
-
-      if notifications_id do
-        message = WebPush.format_push_message("Test", "Message")
-
-        # This should resolve the feed ID to the user ID and find the subscription
-        # It will return an error from ExNudge since we're using a test endpoint,
-        # but that's expected - we're testing the resolution logic
-        result = WebPush.send_web_push([notifications_id], message)
-
-        # Should not be :no_subscriptions since we have a subscription
-        # (it might be an error from the actual push, but that's OK)
-        refute result == {:error, :no_subscriptions}
-      end
+      assert [] = WebPush.list_subscriptions([user.id])
     end
   end
 end

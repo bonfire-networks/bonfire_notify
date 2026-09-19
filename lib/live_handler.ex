@@ -45,7 +45,31 @@ defmodule Bonfire.Notify.LiveHandler do
       case WebPush.subscribe(id(current_user), subscription_data) do
         {:ok, subscription} ->
           broadcast_device_added(subscription)
-          {:noreply, assign_flash(socket, :info, "Device subscribed successfully!")}
+
+          # the confirmation IS a push, so turning it on proves the whole chain at the moment someone cares. It also surfaces the layer browser permission does not cover: an operating system can suppress a browser's notifications entirely (macOS asks per browser), so permission can be granted and nothing ever appears
+          case confirm_by_pushing(subscription, id(current_user)) do
+            :ok ->
+              {:noreply,
+               assign_flash(
+                 socket,
+                 :info,
+                 l(
+                   "Notifications are on. You should see a test notification now: if you don't, check whether your system and browser settings allow notifications from here."
+                 )
+               )}
+
+            other ->
+              error(other, "Subscribed, but the push service would not take a test notification")
+
+              {:noreply,
+               assign_flash(
+                 socket,
+                 :error,
+                 l(
+                   "Notifications are on, but a test notification could not seem to reach this device. Ignore this if the notification did arrive, or check your system and browser settings if it didn't."
+                 )
+               )}
+          end
 
         {:error, reason} ->
           error_msg = Bonfire.Common.Errors.error_msg(reason)
@@ -73,39 +97,21 @@ defmodule Bonfire.Notify.LiveHandler do
   end
 
   def handle_event("test_notification", %{"subscription_id" => subscription_id}, socket) do
-    case WebPush.send_push_notification(
-           subscription_id,
-           format_message("Test Message 📩", "Test for subscription #{subscription_id}.")
-         ) do
-      {:ok, _response} ->
-        {:noreply, assign_flash(socket, :info, "Test sent to #{subscription_id}!")}
+    # scoped to whoever is asking, through the same read a delivery job does: the old path took a bare subscription id and sent to it, so anyone logged in could push to a subscription that wasn't theirs
+    with {:ok, target} <- WebPush.target(subscription_id, uid(current_user_required!(socket))),
+         :ok <-
+           WebPush.deliver(target, %{
+             title: l("Test notification"),
+             body: l("If you can read this, push notifications work on this device.")
+           }) do
+      {:noreply, assign_flash(socket, :info, l("Test sent to this device"))}
+    else
+      {:error, :inactive} ->
+        {:noreply, assign_flash(socket, :error, l("That device is no longer subscribed"))}
 
-      {:error, reason} ->
+      other ->
         {:noreply,
-         assign_flash(
-           socket,
-           :error,
-           "Notification to #{subscription_id} failed: #{inspect(reason)}"
-         )}
-    end
-  end
-
-  def handle_event("broadcast_test_notification", _params, socket) do
-    case WebPush.broadcast(
-           format_message("Broadcasted Test Message! 📩", "🚀🚀🚀 Broadcasted Test Message 🚀🚀🚀")
-         ) do
-      results when is_list(results) ->
-        successful_count =
-          results
-          |> Enum.count(fn
-            {:ok, _, _} -> true
-            {:error, _, _} -> false
-          end)
-
-        {:noreply, assign_flash(socket, :info, "Test sent to #{successful_count} subscriptions")}
-
-      {:error, reason} ->
-        {:noreply, assign_flash(socket, :error, "Broadcast failed: #{inspect(reason)}")}
+         assign_flash(socket, :error, l("Could not send: %{reason}", reason: inspect(other)))}
     end
   end
 
@@ -140,12 +146,13 @@ defmodule Bonfire.Notify.LiveHandler do
      |> push_event("device_removed", %{endpoint: endpoint})}
   end
 
-  def handle_info({:device_removed, subscription}, socket) do
+  def handle_info({:device_removed, device}, socket) do
     {:noreply,
      socket
-     |> stream_delete(:subscriptions, subscription)
+     |> stream_delete(:subscriptions, device)
      |> assign(:subscription_size, max(0, socket.assigns.subscription_size - 1))
-     |> push_event("device_removed", %{endpoint: subscription.endpoint})}
+     # the browser knows its own device by endpoint, so that is what the event carries
+     |> push_event("device_removed", %{endpoint: device.address})}
   end
 
   def handle_info({:device_added, subscription}, socket) do
@@ -226,7 +233,15 @@ defmodule Bonfire.Notify.LiveHandler do
     )
   end
 
-  defp format_message(title, body) do
-    Jason.encode!(%{title: title, body: body})
+  # sent through the same channel a real notification goes through, so what it proves is the real path rather than a simplified one
+  defp confirm_by_pushing(%{push_device_id: push_device_id}, user_id) do
+    with {:ok, target} <- WebPush.target(push_device_id, user_id) do
+      WebPush.deliver(target, %{
+        title: l("Notifications are working"),
+        body: l("This is what a notification from here looks like.")
+      })
+    end
   end
+
+  defp confirm_by_pushing(other, _user_id), do: error(other, "No subscription to confirm")
 end

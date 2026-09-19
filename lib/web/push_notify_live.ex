@@ -52,15 +52,6 @@ defmodule Bonfire.Notify.PushNotifyLive do
               </button>
 
               <button
-                phx-click="Bonfire.Notify:broadcast_test_notification"
-                phx-target={@event_target}
-                type="button"
-                class="btn btn-success btn-sm"
-              >
-                {l("Broadcast Test")}
-              </button>
-
-              <button
                 phx-click="Bonfire.Notify:refresh_subscriptions"
                 phx-target={@event_target}
                 type="button"

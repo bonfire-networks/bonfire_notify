@@ -1,20 +1,27 @@
 defmodule Bonfire.Notify.WebPush do
   @moduledoc """
   Manages web push subscriptions and sends notifications using ExNudge.
+
+  Also the web-push delivery channel: `configured?/0`, `targets/2`, `target/2` and `deliver/3` implement `Bonfire.Notify.Channel` for one recipient and one browser at a time, which is what a delivery job asks for.
+
+  Every query here is scoped to `Bonfire.Notify.WebPushDevice.providers/0`, because a person's subscriptions point at whatever devices they have registered and a phone's APNs token is not ours to send to. That set has two members: a client of ours, and a Mastodon client reached identically but sent a payload of its own shape.
   """
+
+  @behaviour Bonfire.Notify.Channel
 
   use Bonfire.Common.Utils
   import Ecto.Query
   import Bonfire.Common.Config, only: [repo: 0]
 
-  alias Bonfire.Notify.PushSubscription
+  alias Bonfire.Notify.Channel
+  alias Bonfire.Notify.PushDevice
   alias Bonfire.Notify.UserPushSubscription
+  alias Bonfire.Notify.WebPushDevice
 
   @doc """
   Registers a push subscription for a user.
 
-  Finds or creates a PushSubscription by endpoint, then links the user
-  via UserPushSubscription (with optional alerts/policy preferences).
+  Finds or creates the device row by endpoint, then links the user to it, with their own preferences if any came along.
   """
   @spec subscribe(String.t(), map() | String.t()) ::
           {:ok, UserPushSubscription.t()} | {:error, Ecto.Changeset.t() | atom()}
@@ -26,109 +33,39 @@ defmodule Bonfire.Notify.WebPush do
   end
 
   def subscribe(user_id, %{} = data) do
-    case PushSubscription.parse_subscription_data(data) do
+    case WebPushDevice.parse_subscription_data(data) do
       {:ok, parsed_attrs} ->
-        # Split device-level attrs from user-level attrs
         {user_attrs, device_attrs} = split_attrs(parsed_attrs)
 
-        with {:ok, push_sub} <- PushSubscription.find_or_create_by_endpoint(device_attrs),
-             {:ok, user_sub} <- find_or_create_user_link(user_id, push_sub.id, user_attrs) do
-          {:ok, %{user_sub | push_subscription: push_sub}}
+        with {:ok, device} <- WebPushDevice.find_or_create(device_attrs),
+             {:ok, user_sub} <- UserPushSubscription.upsert(user_id, device.id, user_attrs) do
+          {:ok, %{user_sub | push_device: device}}
         end
 
       {:error, reason} ->
         {:error,
-         %PushSubscription{}
-         |> PushSubscription.changeset(%{})
+         %PushDevice{}
+         |> WebPushDevice.changeset(%{})
          |> Ecto.Changeset.add_error(:base, to_string(reason))}
     end
   end
 
   defp split_attrs(parsed) do
-    user_attrs = Map.take(parsed, [:alerts, :policy])
+    # no alerts: subscribing says where to reach someone, and what to send them is a per-verb, per-channel setting on their account. Only `Bonfire.Notify.API.MastoPushAdapter` stores an alerts map, because only that API's rules need one
+    user_attrs = Map.take(parsed, [:policy])
 
     device_attrs =
-      Map.take(parsed, [
-        :endpoint,
-        :auth_key,
-        :p256dh_key,
-        :platform,
-        :user_agent,
-        :device_name
-      ])
+      Map.take(parsed, [:address, :auth_key, :p256dh_key, :device_agent, :device_name])
 
     {user_attrs, device_attrs}
   end
 
   @doc """
-  Links a user to a push subscription (by `push_subscription_id`), creating the
-  link if it doesn't exist or updating its alerts/policy if it does.
-
-  This is the multi-device-safe way to register a subscription: it never touches
-  the user's *other* device links, so subscribing on one device leaves existing
-  subscriptions on other devices intact (per the Mastodon push API).
-  """
-  def upsert_user_link(user_id, push_subscription_id, user_attrs \\ %{}) do
-    find_or_create_user_link(user_id, push_subscription_id, user_attrs)
-  end
-
-  defp find_or_create_user_link(user_id, push_subscription_id, user_attrs) do
-    case repo().one(
-           from(us in UserPushSubscription,
-             where: us.id == ^user_id and us.push_subscription_id == ^push_subscription_id
-           )
-         ) do
-      nil ->
-        %UserPushSubscription{id: user_id}
-        |> UserPushSubscription.changeset(
-          Map.put(user_attrs, :push_subscription_id, push_subscription_id)
-        )
-        |> repo().insert()
-
-      existing ->
-        if user_attrs == %{} do
-          {:ok, existing}
-        else
-          existing
-          |> UserPushSubscription.changeset(user_attrs)
-          |> repo().update()
-        end
-    end
-  end
-
-  @doc """
-  Fetches all subscriptions for a list of user ids.
-  Returns a map of user_id => list of ExNudge.Subscription structs.
-  Only returns active subscriptions.
-  """
-  @spec get_subscriptions([String.t()]) :: %{
-          optional(String.t()) => [ExNudge.Subscription.t()]
-        }
-  def get_subscriptions(user_ids) when is_list(user_ids) do
-    list_subscriptions_with_push(user_ids)
-    |> Enum.group_by(
-      fn {user_sub, _push_sub} -> user_sub.id end,
-      fn {user_sub, push_sub} ->
-        PushSubscription.to_ex_nudge_subscription(push_sub, user_sub.id)
-      end
-    )
-  end
-
-  def get_subscriptions(user_id) when is_binary(user_id) do
-    get_subscriptions([user_id])
-  end
-
-  @doc """
-  Lists active UserPushSubscription records for the given user IDs,
-  preloaded with their PushSubscription.
+  Lists active web subscriptions for the given user ids, each preloaded with its device.
   """
   def list_subscriptions(user_ids) when is_list(user_ids) do
-    from(us in UserPushSubscription,
-      join: ps in PushSubscription,
-      on: ps.id == us.push_subscription_id,
-      where: us.id in ^user_ids and ps.active == true,
-      preload: [push_subscription: ps]
-    )
+    active_web_links()
+    |> where([us], us.id in ^user_ids)
     |> repo().many()
   end
 
@@ -136,271 +73,182 @@ defmodule Bonfire.Notify.WebPush do
     list_subscriptions([user_id])
   end
 
-  defp list_subscriptions_with_push(user_ids) do
-    from(us in UserPushSubscription,
-      join: ps in PushSubscription,
-      on: ps.id == us.push_subscription_id,
-      where: us.id in ^user_ids and ps.active == true,
-      select: {us, ps}
-    )
-    |> repo().many()
-  end
-
+  @doc "Every active web subscription on the instance, or every inactive one."
   def list_all_subscriptions(active? \\ true) do
     from(us in UserPushSubscription,
-      join: ps in PushSubscription,
-      on: ps.id == us.push_subscription_id,
-      where: ps.active == ^active?,
-      preload: [push_subscription: ps]
+      join: d in PushDevice,
+      on: d.id == us.push_device_id,
+      where: d.provider in ^WebPushDevice.providers() and d.active == ^active?,
+      preload: [push_device: d]
     )
     |> repo().many()
   end
 
-  @doc """
-  Sends a web push notification to all subscriptions for a user or multiple users.
-  Uses ExNudge to handle the actual sending.
-
-  The IDs can be either user IDs or notification feed IDs - both are resolved
-  to find matching push subscriptions.
-
-  ## Options
-
-  - `:notify_category` - a Bonfire notification category (e.g. `:likes`,
-    `:boosts`, `:follows`, `:messages`, `:replies_and_mentions`). When given,
-    subscriptions whose Mastodon `alerts` map disables the corresponding alert
-    type are skipped.
-  - `:from_id` - the id of the account that triggered the notification. Used to
-    enforce each subscription's `policy` (`all` / `followed` / `follower` / `none`).
-  """
-  def send_web_push(user_ids, message, opts \\ [])
-      when is_list(user_ids) or is_binary(user_ids) do
-    ids = List.wrap(user_ids)
-
-    subscriptions =
-      ids
-      |> load_subscription_pairs()
-      |> filter_pairs_by_preferences(opts)
-      |> Enum.map(fn {user_sub, push_sub} ->
-        PushSubscription.to_ex_nudge_subscription(push_sub, user_sub.id)
-      end)
-
-    case subscriptions do
-      [] ->
-        {:error, :no_subscriptions}
-
-      subscriptions ->
-        send_web_push_to_subscriptions(subscriptions, message, opts)
-    end
-  end
-
-  # Loads {user_sub, push_sub} pairs for the given ids, treating them first as
-  # user ids and falling back to resolving them as notification feed ids.
-  defp load_subscription_pairs(ids) do
-    case list_subscriptions_with_push(ids) do
-      [] ->
-        ids
-        |> resolve_feed_ids_to_user_ids()
-        |> debug("resolved feed IDs to user IDs")
-        |> list_subscriptions_with_push()
-
-      pairs ->
-        pairs
-    end
-  end
-
-  # Filters {user_sub, push_sub} pairs by each subscription's Mastodon alerts/policy.
-  defp filter_pairs_by_preferences(pairs, opts) do
-    alert_key = opts[:notify_category] && masto_alert_key(opts[:notify_category])
-    from_id = opts[:from_id] && Bonfire.Common.Enums.id(opts[:from_id])
-
-    Enum.filter(pairs, fn {user_sub, _push_sub} ->
-      passes_alerts?(user_sub, alert_key) and passes_policy?(user_sub, from_id)
-    end)
-  end
-
-  # Unknown/absent category -> don't block (we can't map it to an alert type).
-  defp passes_alerts?(_user_sub, nil), do: true
-
-  defp passes_alerts?(user_sub, alert_key) do
-    PushSubscription.effective_alerts(user_sub.alerts)
-    |> Map.get(alert_key, true) == true
-  end
-
-  defp passes_policy?(user_sub, from_id) do
-    case PushSubscription.effective_policy(user_sub.policy) do
-      "all" -> true
-      "none" -> false
-      # `followed`: only from accounts the recipient follows
-      "followed" -> from_id != nil and follows?(user_sub.id, from_id)
-      # `follower`: only from accounts that follow the recipient
-      "follower" -> from_id != nil and follows?(from_id, user_sub.id)
-      _ -> true
-    end
-  end
-
-  defp follows?(subject_id, object_id) do
-    !!Bonfire.Common.Utils.maybe_apply(
-      Bonfire.Social.Graph.Follows,
-      :following?,
-      [subject_id, object_id],
-      fallback_return: false
-    )
-  end
-
-  # Maps a Bonfire notify_category to the Mastodon push `alerts` key.
-  defp masto_alert_key(:likes), do: "favourite"
-  defp masto_alert_key(:boosts), do: "reblog"
-  defp masto_alert_key(:follows), do: "follow"
-  defp masto_alert_key(:messages), do: "mention"
-  defp masto_alert_key(:replies_and_mentions), do: "mention"
-  defp masto_alert_key(_), do: nil
+  @doc "Whether web push can be sent at all on this instance, meaning VAPID keys are configured."
+  @impl Bonfire.Notify.Channel
+  def configured?, do: Bonfire.Notify.enabled?()
 
   @doc """
-  Resolves notification feed IDs to user IDs by querying the Character table.
-  This handles the case where notify_feed_ids from live_push are passed instead of user IDs.
+  Every browser these people have subscribed that will take this kind of notification, in one query.
+
+  Two things on the link can narrow it, both already loaded with the row, so neither costs a query: a subscription whose policy is `none` takes nothing at all, and one a Mastodon client created takes only the types that client asked for, which is that API's own rule and lives with it. A subscription from anywhere else carries no such map, so the person's settings alone decide.
   """
-  def resolve_feed_ids_to_user_ids(feed_ids) when is_list(feed_ids) do
-    from(c in Bonfire.Data.Identity.Character,
-      where: c.notifications_id in ^feed_ids,
-      select: c.id
-    )
-    |> repo().many()
+  @impl Bonfire.Notify.Channel
+  def targets(user_ids, verb \\ nil) when is_list(user_ids) do
+    list_subscriptions(user_ids)
+    |> Enum.filter(&takes?(&1, verb))
+    |> Enum.map(&%{user_id: &1.id, target_id: &1.push_device_id})
+  end
+
+  defp takes?(link, verb) do
+    link.policy != "none" and Bonfire.Notify.API.MastoPushAdapter.accepts?(link, verb)
   end
 
   @doc """
-  Sends notifications to a list of ExNudge.Subscription structs.
-  Handles cleanup of expired subscriptions and tracks status.
+  Re-reads one subscription at delivery time, as this person's link to the device.
+
+  The link rather than the device row, because a browser can be shared: delivering to the device alone would hand someone else's notification to whoever holds the browser now. A device that rotated its endpoint or was pruned is simply not found.
   """
-  defp send_web_push_to_subscriptions(subscriptions, message, opts \\ [])
-
-  defp send_web_push_to_subscriptions(subscriptions, message, opts)
-       when is_list(subscriptions) and subscriptions != [] do
-    debug(message, "sending push to #{length(subscriptions)} subscriptions")
-    # Default TTL to 24 hours so offline devices receive notifications when they reconnect.
-    # Drop our own filtering opts so only ExNudge-understood opts are forwarded.
-    opts =
-      opts
-      |> Keyword.drop([:notify_category, :from_id])
-      |> Keyword.put_new(:ttl, 86_400)
-
-    results = ex_nudge_module().send_notifications(subscriptions, message, opts)
-
-    # Update subscription statuses based on results
-    Enum.each(results, fn
-      {:ok, subscription, _response} ->
-        debug(subscription.endpoint, "Push sent to subscription")
-        update_subscription_status(subscription, :success)
-
-      {:error, subscription, :subscription_expired} ->
-        mark_and_remove_expired(subscription)
-        debug(subscription.endpoint, "Removed expired subscription")
-
-      {:error, subscription, reason} ->
-        update_subscription_status(subscription, {:error, reason})
-        debug(reason, "Failed to send to #{subscription.endpoint}")
-    end)
-
-    results
-  end
-
-  defp send_web_push_to_subscriptions(subscriptions, _message, _opts) do
-    error(subscriptions, "no_subscriptions: No valid subscriptions provided")
-    {:error, :no_subscriptions}
-  end
-
-  defp update_subscription_status(%ExNudge.Subscription{endpoint: endpoint}, :success) do
-    from(s in PushSubscription, where: s.endpoint == ^endpoint)
-    |> repo().update_all(
-      set: [
-        last_status: :success,
-        last_used_at: DateTime.utc_now(),
-        last_error: nil,
-        active: true
-      ]
-    )
-  end
-
-  defp update_subscription_status(%ExNudge.Subscription{endpoint: endpoint}, {:error, reason}) do
-    from(s in PushSubscription, where: s.endpoint == ^endpoint)
-    |> repo().update_all(
-      set: [
-        last_status: :error,
-        last_used_at: DateTime.utc_now(),
-        last_error: inspect(reason)
-      ]
-    )
-  end
-
-  defp mark_and_remove_expired(%ExNudge.Subscription{endpoint: endpoint}) do
-    # Delete the push subscription (cascades to user links via on_delete: :delete_all)
-    remove_subscription_by_endpoint(endpoint)
-  end
-
-  @doc """
-  Removes a user's link to a push subscription by its push_subscription_id,
-  scoped to the given user.
-  """
-  def remove_device(user_id, push_subscription_id) do
-    case repo().one(
-           from(us in UserPushSubscription,
-             where: us.id == ^user_id and us.push_subscription_id == ^push_subscription_id
-           )
-         ) do
-      nil -> {:error, :not_found}
-      user_sub -> repo().delete(user_sub)
+  @impl Bonfire.Notify.Channel
+  def target(push_device_id, user_id) when is_binary(push_device_id) and is_binary(user_id) do
+    active_web_links()
+    |> where([us], us.id == ^user_id and us.push_device_id == ^push_device_id)
+    |> repo().one()
+    |> case do
+      nil -> {:error, :inactive}
+      link -> {:ok, link}
     end
   end
 
   @doc """
-  Removes a subscription by endpoint.
-  Deletes the PushSubscription (cascades to UserPushSubscription links).
+  Sends one notification's content to one browser, and records what came back.
+
+  The response decides the job's fate rather than just being logged: a gone endpoint is deactivated and cancelled (there is nothing to retry), a rate limit is a snooze, a server error is worth retrying, and a rejected request means our own configuration is wrong, so retrying it five times only delays the same failure.
+  """
+  @impl Bonfire.Notify.Channel
+  def deliver(
+        %UserPushSubscription{push_device: %PushDevice{} = device} = link,
+        content,
+        opts \\ []
+      ) do
+    # shaped and serialised at the wire, because which shape this endpoint's client can read is known here and nowhere earlier
+    case Channel.payload_json(link, content) do
+      {:ok, payload} ->
+        device
+        |> WebPushDevice.to_ex_nudge_subscription(link.id)
+        |> ex_nudge_module().send_notification(
+          payload,
+          Keyword.take(opts, [:ttl, :urgency, :topic])
+        )
+        |> handle_delivery_result(device)
+
+      {:error, reason} ->
+        # nothing this client could read, so there is nothing to retry
+        {:cancel, reason}
+    end
+  end
+
+  defp handle_delivery_result({:ok, %{status_code: status}}, device) when status in 200..299 do
+    PushDevice.mark_status(device, :success)
+    :ok
+  end
+
+  defp handle_delivery_result({:error, :subscription_expired}, device),
+    do: deactivate_and_cancel(device, :subscription_expired)
+
+  defp handle_delivery_result({:error, {:http_error, status}}, device)
+       when status in [404, 410],
+       do: deactivate_and_cancel(device, {:http_error, status})
+
+  defp handle_delivery_result({:error, :payload_too_large}, device) do
+    # our own payload is too big for this push service, so it will be too big next time too
+    PushDevice.mark_status(device, {:error, :payload_too_large})
+    error(:payload_too_large, "Web push payload rejected as too large")
+    {:cancel, :payload_too_large}
+  end
+
+  defp handle_delivery_result({:error, {:http_error, 429}}, device) do
+    PushDevice.mark_status(device, {:error, {:http_error, 429}})
+    {:snooze, snooze_seconds()}
+  end
+
+  defp handle_delivery_result({:error, {:http_error, status}}, device) when status >= 500 do
+    PushDevice.mark_status(device, {:error, {:http_error, status}})
+    {:error, {:http_error, status}}
+  end
+
+  defp handle_delivery_result({:error, {:http_error, status}}, device) do
+    PushDevice.mark_status(device, {:error, {:http_error, status}})
+
+    error(
+      {:http_error, status},
+      "Web push rejected our request, so check the VAPID configuration"
+    )
+
+    {:cancel, {:http_error, status}}
+  end
+
+  defp handle_delivery_result({:error, {:request_failed, reason}}, device) do
+    PushDevice.mark_status(device, {:error, {:request_failed, reason}})
+    {:error, {:request_failed, reason}}
+  end
+
+  defp handle_delivery_result({:error, reason}, device) do
+    # anything else is ours rather than the push service's: no keys, an unencryptable payload
+    PushDevice.mark_status(device, {:error, reason})
+    error(reason, "Could not send a web push, so cancelling rather than retrying it")
+    {:cancel, reason}
+  end
+
+  defp deactivate_and_cancel(device, reason) do
+    PushDevice.mark_status(device, {:expired, reason})
+    {:cancel, :inactive}
+  end
+
+  defp snooze_seconds do
+    Config.get([Bonfire.Notify.Channel, :snooze_seconds], 60,
+      name: l("Push rate-limit snooze"),
+      description: l("How long to wait before retrying a delivery a push service rate-limited.")
+    )
+  end
+
+  defp active_web_links do
+    from(us in UserPushSubscription,
+      join: d in PushDevice,
+      on: d.id == us.push_device_id,
+      where: d.provider in ^WebPushDevice.providers() and d.active == true,
+      preload: [push_device: d]
+    )
+  end
+
+  @doc """
+  Removes a browser's device row by endpoint, and with it everyone's links to it.
   """
   def remove_subscription_by_endpoint(endpoint) when is_binary(endpoint) do
-    from(s in PushSubscription, where: s.endpoint == ^endpoint)
+    from(d in PushDevice,
+      where: d.provider in ^WebPushDevice.providers() and d.address == ^endpoint
+    )
     |> repo().delete_all()
   end
 
   @doc """
-  Removes a PushSubscription by its database ID.
+  Removes a device row by its id, and with it everyone's links to it.
   """
-  def remove_subscription(subscription_id) when is_binary(subscription_id) do
-    case repo().get(PushSubscription, subscription_id) do
+  def remove_subscription(push_device_id) when is_binary(push_device_id) do
+    case repo().get(PushDevice, push_device_id) do
       nil -> {:error, :subscription_not_found}
-      subscription -> repo().delete(subscription)
+      device -> repo().delete(device)
     end
   end
 
   @doc """
-  Removes a user's link to a push subscription, without deleting the push subscription itself.
-  """
-  def remove_user_subscription(user_id, push_subscription_id) do
-    from(us in UserPushSubscription,
-      where: us.id == ^user_id and us.push_subscription_id == ^push_subscription_id
-    )
-    |> repo().delete_all()
-  end
-
-  @doc """
-  Deletes all UserPushSubscription links for a given user.
-  Does not delete the underlying PushSubscription records.
-  """
-  def delete_all_for_user(user_id) do
-    from(us in UserPushSubscription, where: us.id == ^user_id)
-    |> repo().delete_all()
-  end
-
-  @doc """
-  Gets the most recent active push subscription for a user.
+  Gets the user's most recently used web subscription.
   """
   def get_user_subscription(user_id) do
-    from(us in UserPushSubscription,
-      join: ps in PushSubscription,
-      on: ps.id == us.push_subscription_id,
-      where: us.id == ^user_id and ps.active == true,
-      order_by: [desc: ps.last_used_at],
-      limit: 1,
-      preload: [push_subscription: ps]
-    )
+    active_web_links()
+    |> where([us], us.id == ^user_id)
+    |> order_by([us, d], desc: d.last_used_at)
+    |> limit(1)
     |> repo().one()
   end
 
@@ -408,51 +256,11 @@ defmodule Bonfire.Notify.WebPush do
   Helper to format a push notification message.
   """
   def format_push_message(title, body, opts \\ []) do
-    Jason.encode!(%{
-      title: title,
-      body: body,
-      icon: opts[:icon],
-      tag: opts[:tag],
-      requireInteraction: opts[:require_interaction] || false,
-      data: %{url: opts[:url]}
-    })
-  end
-
-  @doc """
-  Broadcasts a message to ALL active subscriptions (admin/testing use).
-  Use with caution - this sends to every subscribed user.
-  """
-  def broadcast(message, opts \\ []) do
-    from(us in UserPushSubscription,
-      join: ps in PushSubscription,
-      on: ps.id == us.push_subscription_id,
-      where: ps.active == true,
-      select: {us, ps}
-    )
-    |> repo().all()
-    |> Enum.map(fn {user_sub, push_sub} ->
-      PushSubscription.to_ex_nudge_subscription(push_sub, user_sub.id)
-    end)
-    |> send_web_push_to_subscriptions(message, opts)
-  end
-
-  @doc """
-  Sends a push notification to a single subscription by PushSubscription ID.
-  Useful for testing individual subscriptions.
-  """
-  def send_push_notification(subscription_id, message, opts \\ [])
-      when is_binary(subscription_id) do
-    case repo().get(PushSubscription, subscription_id) do
-      nil ->
-        {:error, :subscription_not_found}
-
-      push_sub ->
-        push_sub
-        |> PushSubscription.to_ex_nudge_subscription()
-        |> List.wrap()
-        |> send_web_push_to_subscriptions(message, opts)
-        |> List.first()
-    end
+    opts
+    |> Map.new()
+    |> Map.merge(%{title: title, body: body})
+    |> Channel.push_payload()
+    |> Jason.encode!()
   end
 
   def ex_nudge_module do

@@ -3,7 +3,8 @@ if Application.compile_env(:bonfire_api_graphql, :modularity) != :disabled do
     use Bonfire.Notify.DataCase, async: false
 
     alias Bonfire.API.GraphQL.Schema
-    alias Bonfire.Notify.NativePushDevice
+    alias Bonfire.Notify.NativePush
+    alias Bonfire.Notify.PushDevice
     import Bonfire.Common.Config, only: [repo: 0]
 
     @moduletag :graphql
@@ -17,12 +18,6 @@ if Application.compile_env(:bonfire_api_graphql, :modularity) != :disabled do
         device_name
         policy
         active
-        alerts {
-          mention
-          poll
-          status
-          admin_sign_up
-        }
       }
     }
     """
@@ -34,7 +29,6 @@ if Application.compile_env(:bonfire_api_graphql, :modularity) != :disabled do
         provider
         platform
         device_name
-        alerts { mention poll }
       }
     }
     """
@@ -53,13 +47,7 @@ if Application.compile_env(:bonfire_api_graphql, :modularity) != :disabled do
               "token" => "fcm-token-graphql",
               "platform" => "ios",
               "device_name" => "Ivan's iPhone",
-              "policy" => "all",
-              "alerts" => %{
-                "mention" => true,
-                "poll" => false,
-                "status" => true,
-                "admin_sign_up" => true
-              }
+              "policy" => "all"
             }
           },
           context: Schema.context(%{current_user: user})
@@ -72,14 +60,16 @@ if Application.compile_env(:bonfire_api_graphql, :modularity) != :disabled do
       assert device["platform"] == "ios"
       assert device["device_name"] == "Ivan's iPhone"
       assert device["active"] == true
-      assert device["alerts"]["mention"] == true
-      assert device["alerts"]["poll"] == false
-      assert device["alerts"]["status"] == true
-      assert device["alerts"]["admin_sign_up"] == true
 
-      stored = repo().get!(NativePushDevice, device["id"])
-      assert stored.token == "fcm-token-graphql"
-      assert stored.user_id == user.id
+      stored = repo().get!(PushDevice, device["id"])
+      assert stored.address == "fcm-token-graphql"
+
+      # the device says nothing about whose it is: one subscription per person does, which is what lets two accounts share a phone
+      assert [subscription] = NativePush.list_devices(user)
+      assert subscription.id == user.id
+
+      refute subscription.alerts,
+             "registering says where to reach someone; what to send them is a setting on their account, and only the Mastodon API's own rules need a per-device map"
 
       {:ok, list_result} =
         Absinthe.run(@devices, Schema, context: Schema.context(%{current_user: user}))

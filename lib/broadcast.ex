@@ -66,9 +66,10 @@ defmodule Bonfire.Notify.Broadcast do
       []
     )
 
-    Bonfire.Social.LivePush.notify(admin, :broadcast, published,
-      feed_ids: notification_feed_ids,
-      notify: true
+    # no feeds to broadcast to, because publishing above already did that: what is left is the notified half, the unseen counters and a flash for whoever is online
+    Bonfire.Social.LivePush.emit_live(published, [],
+      notify_feeds: notification_feed_ids,
+      push_to_thread: false
     )
 
     {:ok, published, length(recipients)}

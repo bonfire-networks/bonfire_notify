@@ -1,154 +1,163 @@
 defmodule Bonfire.Notify.NativePush do
   @moduledoc """
-  Registers and manages native APNs/FCM push device tokens.
+  Registers and manages native APNs/FCM push devices.
+
+  Also the native delivery channel: `configured?/0`, `targets/2`, `target/2` and `deliver/3` implement `Bonfire.Notify.Channel` for one recipient and one device at a time, which is what a delivery job asks for.
+
+  Every query here is scoped to the native gateways, because a person's links point at whatever devices they have registered and a browser's endpoint is not ours to send to.
   """
+
+  @behaviour Bonfire.Notify.Channel
 
   use Bonfire.Common.Utils
   import Ecto.Query
   import Bonfire.Common.Config, only: [repo: 0]
 
   alias Bonfire.Notify.NativePushDevice
+  alias Bonfire.Notify.PushDevice
+  alias Bonfire.Notify.UserPushSubscription
 
-  @doc "Registers or updates a native push device for a user."
-  def register(%{} = user, attrs), do: register(id(user), attrs)
+  @doc """
+  Registers a native push device for a user.
 
-  def register(user_id, attrs) when is_binary(user_id) and is_map(attrs) do
+  Finds or creates the device row by its token, then links this user to it. Two accounts on one phone get one device row and a link each, so registering can never take the device away from whoever registered it first.
+  """
+  def register(user, attrs) do
+    user_id = uid(user)
     attrs = normalize_attrs(attrs)
-    provider = attrs[:provider]
-    token = attrs[:token]
+    {link_attrs, device_attrs} = split_attrs(attrs)
 
-    existing =
-      if is_binary(provider) and is_binary(token) do
-        NativePushDevice.get_by_provider_and_token(provider, token)
-      end
-
-    existing = existing || %NativePushDevice{}
-
-    existing
-    |> NativePushDevice.changeset(attrs, user_id: user_id)
-    |> repo().insert_or_update()
+    with {:ok, device} <- NativePushDevice.find_or_create(device_attrs),
+         {:ok, link} <- UserPushSubscription.upsert(user_id, device.id, link_attrs) do
+      {:ok, %{link | push_device: device}}
+    end
   end
 
-  @doc "Lists active native push devices for a user."
-  def list_devices(%{} = user), do: list_devices(id(user))
+  defp split_attrs(attrs) do
+    {Map.take(attrs, [:policy]),
+     Map.take(attrs, [:provider, :token, :platform, :device_name, :active])}
+  end
 
-  def list_devices(user_id) when is_binary(user_id) do
-    from(d in NativePushDevice,
-      where: d.user_id == ^user_id and d.active == true,
-      order_by: [desc: d.updated_at, desc: d.inserted_at]
-    )
+  @doc "Lists a user's active native devices, as their own subscriptions to them."
+  def list_devices(user) do
+    user_id = uid(user)
+
+    active_native_links()
+    |> where([us], us.id == ^user_id)
     |> repo().many()
   end
 
-  @doc "Removes a native push device belonging to a user."
-  def remove_device(%{} = user, device_id), do: remove_device(id(user), device_id)
+  @doc """
+  Every active device these people have that will take this kind of notification, in one query.
 
-  def remove_device(user_id, device_id) when is_binary(user_id) and is_binary(device_id) do
-    case repo().one(
-           from(d in NativePushDevice,
-             where: d.user_id == ^user_id and d.id == ^device_id
-           )
-         ) do
-      nil -> {:error, :not_found}
-      device -> repo().delete(device)
+  Two things on the link can narrow it, both already loaded with the row: a subscription whose policy is `none` takes nothing at all, and one registered through the Mastodon API takes only the types that client asked for, which is that API's own rule and lives with it. A subscription from anywhere else carries no such map, so the person's settings alone decide.
+  """
+  @impl Bonfire.Notify.Channel
+  def targets(user_ids, verb \\ nil) when is_list(user_ids) do
+    active_native_links()
+    |> where([us], us.id in ^user_ids)
+    |> repo().many()
+    |> Enum.filter(&takes?(&1, verb))
+    |> Enum.map(&%{user_id: &1.id, target_id: &1.push_device_id})
+  end
+
+  defp takes?(link, verb) do
+    link.policy != "none" and Bonfire.Notify.API.MastoPushAdapter.accepts?(link, verb)
+  end
+
+  @doc """
+  Re-reads one subscription at delivery time, as this person's link to the device.
+
+  The link rather than the device row, because a phone can be shared: delivering to the device alone would hand someone else's notification to whoever is logged in now. A device that was deregistered, or that a rejected send marked inactive, is simply not found.
+  """
+  @impl Bonfire.Notify.Channel
+  def target(push_device_id, user_id) when is_binary(push_device_id) and is_binary(user_id) do
+    active_native_links()
+    |> where([us], us.id == ^user_id and us.push_device_id == ^push_device_id)
+    |> repo().one()
+    |> case do
+      nil -> {:error, :inactive}
+      link -> {:ok, link}
     end
   end
 
-  @doc "Marks a native push device inactive by provider token."
-  def deactivate(provider, token) when is_binary(provider) and is_binary(token) do
-    case NativePushDevice.get_by_provider_and_token(provider, token) do
-      nil ->
-        {:error, :not_found}
+  @doc """
+  Sends one notification's content to one device, and records what came back.
 
-      device ->
-        device
-        |> NativePushDevice.changeset(%{active: false, last_status: :expired})
-        |> repo().update()
+  A token the gateway has rejected as gone is deactivated and cancelled, since it will never work again; anything else is worth another attempt. An instance with no native adapter configured cancels rather than erroring, because no amount of retrying configures one.
+  """
+  @impl Bonfire.Notify.Channel
+  def deliver(
+        %UserPushSubscription{push_device: %PushDevice{} = device} = link,
+        content,
+        opts \\ []
+      ) do
+    adapter = native_push_adapter()
+
+    if adapter_configured?(adapter) do
+      # shaped and serialised at the wire, where what is listening on this device is known
+      case Bonfire.Notify.Channel.payload_json(link, content) do
+        {:ok, payload} ->
+          [device]
+          |> adapter.send_notifications(payload, Keyword.take(opts, [:ttl, :urgency, :topic]))
+          |> List.wrap()
+          |> List.first()
+          |> handle_delivery_result(device)
+
+        {:error, reason} ->
+          # nothing this client could read, so there is nothing to retry
+          {:cancel, reason}
+      end
+    else
+      {:cancel, :native_push_not_configured}
     end
   end
+
+  defp handle_delivery_result({:ok, _device, _response}, device) do
+    PushDevice.mark_status(device, :success)
+    :ok
+  end
+
+  defp handle_delivery_result({:error, _device, reason}, device)
+       when reason in [:expired, :unregistered, :invalid_token] do
+    PushDevice.mark_status(device, {:expired, reason})
+    {:cancel, :inactive}
+  end
+
+  defp handle_delivery_result({:error, _device, reason}, device) do
+    PushDevice.mark_status(device, {:error, reason})
+    {:error, reason}
+  end
+
+  defp handle_delivery_result(other, device) do
+    PushDevice.mark_status(device, {:error, other})
+    error(other, "Native push adapter answered in a shape we don't understand")
+    {:error, :unexpected_adapter_result}
+  end
+
+  @doc """
+  Removes a user's subscription to a device, leaving the device for anyone else who uses it.
+  """
+  def remove_device(user, push_device_id),
+    do: UserPushSubscription.unsubscribe(uid(user), push_device_id)
 
   @doc "Returns whether a native push adapter is configured."
+  @impl Bonfire.Notify.Channel
   def configured? do
     adapter = native_push_adapter()
     adapter_configured?(adapter)
   end
 
-  @doc "Sends a message through the configured native push adapter."
-  def send_native_push(user_ids, message, opts \\ [])
-      when is_list(user_ids) or is_binary(user_ids) do
-    devices =
-      user_ids
-      |> List.wrap()
-      |> list_active_devices()
-      |> filter_devices_by_preferences(opts)
+  defp active_native_links do
+    providers = NativePushDevice.providers()
 
-    case devices do
-      [] ->
-        {:error, :no_native_push_devices}
-
-      devices ->
-        adapter = native_push_adapter()
-
-        if adapter_configured?(adapter) do
-          opts = Keyword.drop(opts, [:notify_category, :from_id])
-          results = adapter.send_notifications(devices, message, opts)
-
-          update_device_statuses(results)
-          results
-        else
-          {:error, :native_push_not_configured}
-        end
-    end
-  end
-
-  defp list_active_devices(user_ids) do
-    from(d in NativePushDevice,
-      where: d.user_id in ^user_ids and d.active == true
-    )
-    |> repo().many()
-  end
-
-  defp filter_devices_by_preferences(devices, opts) do
-    alert_key = opts[:notify_category] && masto_alert_key(opts[:notify_category])
-    from_id = opts[:from_id] && Bonfire.Common.Enums.id(opts[:from_id])
-
-    Enum.filter(devices, fn device ->
-      passes_alerts?(device, alert_key) and passes_policy?(device, from_id)
-    end)
-  end
-
-  defp passes_alerts?(_device, nil), do: true
-
-  defp passes_alerts?(device, alert_key) do
-    NativePushDevice.effective_alerts(device.alerts)
-    |> Map.get(alert_key, true) == true
-  end
-
-  defp passes_policy?(device, from_id) do
-    case NativePushDevice.effective_policy(device.policy) do
-      "all" -> true
-      "none" -> false
-      "followed" -> from_id != nil and follows?(device.user_id, from_id)
-      "follower" -> from_id != nil and follows?(from_id, device.user_id)
-      _ -> true
-    end
-  end
-
-  defp follows?(subject_id, object_id) do
-    !!Bonfire.Common.Utils.maybe_apply(
-      Bonfire.Social.Graph.Follows,
-      :following?,
-      [subject_id, object_id],
-      fallback_return: false
+    from(us in UserPushSubscription,
+      join: d in PushDevice,
+      on: d.id == us.push_device_id,
+      where: d.provider in ^providers and d.active == true,
+      preload: [push_device: d]
     )
   end
-
-  defp masto_alert_key(:likes), do: "favourite"
-  defp masto_alert_key(:boosts), do: "reblog"
-  defp masto_alert_key(:follows), do: "follow"
-  defp masto_alert_key(:messages), do: "mention"
-  defp masto_alert_key(:replies_and_mentions), do: "mention"
-  defp masto_alert_key(_), do: nil
 
   defp native_push_adapter do
     Application.get_env(:bonfire_notify, :native_push_adapter)
@@ -160,71 +169,11 @@ defmodule Bonfire.Notify.NativePush do
     Code.ensure_loaded?(adapter) and function_exported?(adapter, :send_notifications, 3)
   end
 
-  defp update_device_statuses(results) when is_list(results) do
-    Enum.each(results, fn
-      {:ok, %NativePushDevice{} = device, _response} ->
-        update_device_status(device, :success)
-
-      {:ok, %NativePushDevice{} = device} ->
-        update_device_status(device, :success)
-
-      {:error, %NativePushDevice{} = device, reason}
-      when reason in [:expired, :unregistered, :invalid_token] ->
-        update_device_status(device, {:expired, reason})
-
-      {:error, %NativePushDevice{} = device, reason} ->
-        update_device_status(device, {:error, reason})
-
-      _ ->
-        :ok
-    end)
-  end
-
-  defp update_device_statuses(_results), do: :ok
-
-  defp update_device_status(%NativePushDevice{id: id}, :success) do
-    from(d in NativePushDevice, where: d.id == ^id)
-    |> repo().update_all(
-      set: [
-        last_status: :success,
-        last_used_at: now(),
-        last_error: nil,
-        active: true
-      ]
-    )
-  end
-
-  defp update_device_status(%NativePushDevice{id: id}, {:expired, reason}) do
-    from(d in NativePushDevice, where: d.id == ^id)
-    |> repo().update_all(
-      set: [
-        last_status: :expired,
-        last_used_at: now(),
-        last_error: inspect(reason),
-        active: false
-      ]
-    )
-  end
-
-  defp update_device_status(%NativePushDevice{id: id}, {:error, reason}) do
-    from(d in NativePushDevice, where: d.id == ^id)
-    |> repo().update_all(
-      set: [
-        last_status: :error,
-        last_used_at: now(),
-        last_error: inspect(reason)
-      ]
-    )
-  end
-
-  defp now, do: DateTime.utc_now() |> DateTime.truncate(:second)
-
   defp normalize_attrs(attrs) do
     attrs
     |> atomize_allowed()
     |> Map.update(:provider, nil, &normalize_string/1)
     |> Map.update(:platform, nil, &normalize_string/1)
-    |> Map.update(:alerts, nil, &normalize_alerts/1)
   end
 
   defp atomize_allowed(attrs) do
@@ -234,7 +183,6 @@ defmodule Bonfire.Notify.NativePush do
     |> maybe_take(attrs, :platform, "platform")
     |> maybe_take(attrs, :device_name, "device_name")
     |> maybe_take(attrs, :device_name, "deviceName")
-    |> maybe_take(attrs, :alerts, "alerts")
     |> maybe_take(attrs, :policy, "policy")
     |> maybe_take(attrs, :active, "active")
   end
@@ -249,21 +197,4 @@ defmodule Bonfire.Notify.NativePush do
 
   defp normalize_string(value) when is_binary(value), do: String.downcase(value)
   defp normalize_string(value), do: value
-
-  defp normalize_alerts(nil), do: nil
-
-  defp normalize_alerts(alerts) when is_map(alerts) do
-    alerts
-    |> Enum.reduce(%{}, fn
-      {:admin_sign_up, value}, acc -> Map.put(acc, "admin.sign_up", value)
-      {"admin_sign_up", value}, acc -> Map.put(acc, "admin.sign_up", value)
-      {:admin_report, value}, acc -> Map.put(acc, "admin.report", value)
-      {"admin_report", value}, acc -> Map.put(acc, "admin.report", value)
-      {key, value}, acc when is_atom(key) -> Map.put(acc, Atom.to_string(key), value)
-      {key, value}, acc when is_binary(key) -> Map.put(acc, key, value)
-      _, acc -> acc
-    end)
-  end
-
-  defp normalize_alerts(other), do: other
 end

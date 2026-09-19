@@ -1,158 +1,66 @@
 defmodule Bonfire.Notify.NativePushDevice do
   @moduledoc """
-  Native APNs/FCM device token registered by a Bonfire user.
+  The native half of `Bonfire.Notify.PushDevice`: its changeset and its vocabulary.
+
+  Native devices are rows in the one device table, so there is no schema here. What is here is what native has that web does not: a gateway to name (`apns` or `fcm`), and a device token where web has an endpoint URL. Clients speak of a `token` and a `platform`, so this module is also where those names meet the shared columns.
+
+  Two changesets over one schema rather than one branching on `provider`, because each transport can then require exactly what it needs and report errors in its own terms.
   """
 
-  use Ecto.Schema
   import Ecto.Changeset
-  import Ecto.Query
-  import Bonfire.Common.Config, only: [repo: 0]
 
-  alias Bonfire.Notify.NativePushDevice
+  alias Bonfire.Notify.PushDevice
 
-  @primary_key {:id, :binary_id, autogenerate: true}
-  @providers ["apns", "fcm"]
-  @policies ["all", "follower", "followed", "none"]
-  @default_alerts %{
-    "follow" => true,
-    "follow_request" => true,
-    "favourite" => true,
-    "reblog" => true,
-    "mention" => true,
-    "poll" => true,
-    "status" => false,
-    "update" => false,
-    "admin.sign_up" => false,
-    "admin.report" => false
-  }
+  @providers [:apns, :fcm]
 
-  schema "bonfire_notify_native_push_device" do
-    field(:user_id, :string)
-    field(:provider, :string)
-    field(:token, :string)
-    field(:token_hash, :string)
-    field(:active, :boolean, default: true)
-    field(:platform, :string)
-    field(:device_name, :string)
-    field(:alerts, :map)
-    field(:policy, :string)
-    field(:last_used_at, :utc_datetime)
-    field(:last_status, Ecto.Enum, values: [:success, :error, :expired, :pending])
-    field(:last_error, :string)
-
-    timestamps(type: :utc_datetime)
-  end
-
-  @doc "Creates or updates a native push device changeset."
-  def changeset(struct, attrs, opts \\ []) do
-    struct
-    |> cast(attrs, [
-      :provider,
-      :token,
-      :active,
-      :platform,
-      :device_name,
-      :alerts,
-      :policy,
-      :last_used_at,
-      :last_status,
-      :last_error
-    ])
-    |> normalize_provider()
-    |> put_token_hash()
-    |> maybe_put_user_id(opts[:user_id])
-    |> validate_required([:user_id, :provider, :token, :token_hash])
-    |> validate_inclusion(:provider, @providers)
-    |> validate_inclusion(:policy, @policies)
-    |> validate_inclusion(:last_status, [:success, :error, :expired, :pending])
-    |> unique_constraint([:provider, :token_hash])
-  end
-
-  @doc "Returns the supported native push providers."
+  @doc "The native push gateways we can send through."
   def providers, do: @providers
 
-  @doc "Returns the default alert preferences."
-  def default_alerts, do: @default_alerts
+  @doc """
+  A changeset for a native push device, in native vocabulary.
 
-  @doc "Returns effective alerts, resolving nil to defaults."
-  def effective_alerts(nil), do: @default_alerts
-  def effective_alerts(alerts) when is_map(alerts), do: Map.merge(@default_alerts, alerts)
+  Takes `token` and `platform` as a client sends them: the token is the device's `address`, and a declared platform is its `device_agent`, since a native HTTP client often sends no User-Agent header and then its own word for itself is all there is.
 
-  @doc "Returns effective policy, resolving nil to all."
-  def effective_policy(nil), do: "all"
-  def effective_policy(policy), do: policy
-
-  @doc "Hashes a provider device token for lookup and uniqueness."
-  def hash_token(token) when is_binary(token) do
-    :crypto.hash(:sha256, token)
-    |> Base.encode16(case: :lower)
+  Nothing here says whose device it is. Ownership lives on `Bonfire.Notify.UserPushSubscription`, one link per person, which is what lets two accounts share a phone instead of taking it from each other.
+  """
+  def changeset(struct \\ %PushDevice{}, attrs) do
+    struct
+    |> cast(native_names(attrs), [:provider, :address | PushDevice.shared_cast()])
+    # a native gateway carries the payload to itself, so there is nothing to encrypt it with, and the check constraint refuses a native row holding keys anyway
+    |> put_change(:auth_key, nil)
+    |> put_change(:p256dh_key, nil)
+    |> validate_required([:provider, :address])
+    |> validate_inclusion(:provider, @providers)
+    |> unique_constraint([:provider, :address])
   end
 
-  def get_by_provider_and_token(provider, token) when is_binary(provider) and is_binary(token) do
-    provider = String.downcase(provider)
-    token_hash = hash_token(token)
+  @doc """
+  Finds or creates a device row by its token, within its gateway.
 
-    from(d in NativePushDevice, where: d.provider == ^provider and d.token_hash == ^token_hash)
-    |> repo().one()
-  end
+  A second account registering the same phone finds the row rather than taking it over, and gets a link of its own.
 
-  defp normalize_provider(changeset) do
-    case get_change(changeset, :provider) do
-      provider when is_binary(provider) ->
-        put_change(changeset, :provider, String.downcase(provider))
+  A gateway we don't know goes straight to the changeset, which is where a client's typo belongs: looking it up first would pin an unknown value into a query over an enum column and raise.
+  """
+  def find_or_create(attrs) do
+    attrs = native_names(attrs)
 
-      _ ->
-        changeset
+    case PushDevice.known_provider(attrs[:provider], @providers) do
+      nil -> %PushDevice{} |> changeset(attrs) |> Ecto.Changeset.apply_action(:insert)
+      provider -> PushDevice.find_or_create(provider, attrs, &changeset/2)
     end
   end
 
-  defp put_token_hash(changeset) do
-    case get_field(changeset, :token) do
-      token when is_binary(token) and token != "" ->
-        put_change(changeset, :token_hash, hash_token(token))
-
-      _ ->
-        changeset
-    end
+  # translating rather than casting these keys, so a client's vocabulary never appears as a column name. Running it twice is harmless, which lets `find_or_create/1` translate before looking the address up and still hand the changeset the same attrs
+  defp native_names(attrs) do
+    attrs
+    |> rename_key(:token, :address)
+    |> rename_key(:platform, :device_agent)
   end
 
-  defp maybe_put_user_id(changeset, user_id) when is_binary(user_id),
-    do: put_change(changeset, :user_id, user_id)
-
-  defp maybe_put_user_id(changeset, _user_id), do: changeset
-end
-
-defmodule Bonfire.Notify.NativePushDevice.Migration do
-  @moduledoc false
-  use Ecto.Migration
-
-  def migrate_native_push_device(:up) do
-    create_if_not_exists table(:bonfire_notify_native_push_device, primary_key: false) do
-      add(:id, :binary_id, primary_key: true)
-      add(:user_id, :text, null: false)
-      add(:provider, :string, null: false)
-      add(:token, :text, null: false)
-      add(:token_hash, :string, null: false)
-      add(:active, :boolean, default: true, null: false)
-      add(:platform, :string)
-      add(:device_name, :string)
-      add(:alerts, :map)
-      add(:policy, :string)
-      add(:last_used_at, :utc_datetime)
-      add(:last_status, :string)
-      add(:last_error, :text)
-      timestamps(type: :utc_datetime)
+  defp rename_key(attrs, from, to) do
+    case Map.pop(attrs, from) do
+      {nil, attrs} -> attrs
+      {value, attrs} -> Map.put(attrs, to, value)
     end
-
-    create_if_not_exists(index(:bonfire_notify_native_push_device, [:user_id]))
-    create_if_not_exists(index(:bonfire_notify_native_push_device, [:active]))
-
-    create_if_not_exists(
-      unique_index(:bonfire_notify_native_push_device, [:provider, :token_hash])
-    )
-  end
-
-  def migrate_native_push_device(:down) do
-    drop_if_exists(table(:bonfire_notify_native_push_device))
   end
 end

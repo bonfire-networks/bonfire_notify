@@ -13,38 +13,15 @@ defmodule Bonfire.Notify.Web.MastoPushApiTest do
   use Bonfire.Notify.ConnCase, async: false
 
   alias Bonfire.Me.Fake
-  alias Bonfire.OpenID.Provider.ClientApps
-  alias Boruta.Ecto.AccessTokens, as: AccessTokensAdapter
-  import Boruta.Ecto.OauthMapper, only: [to_oauth_schema: 1]
 
   @moduletag :masto_api
 
   setup do
     account = Fake.fake_account!()
     user = Fake.fake_user!(account)
-    conn = build_authenticated_conn(user)
+    conn = masto_authenticated_conn(user)
 
     {:ok, conn: conn, user: user}
-  end
-
-  defp build_authenticated_conn(user) do
-    {:ok, ecto_client} =
-      ClientApps.new(%{
-        id: Faker.UUID.v4(),
-        name: "test-push-app",
-        redirect_uris: ["http://localhost:4000/oauth/callback"]
-      })
-
-    {:ok, token} =
-      AccessTokensAdapter.create(
-        %{client: to_oauth_schema(ecto_client), sub: user.id, scope: "read write push"},
-        []
-      )
-
-    Phoenix.ConnTest.build_conn()
-    |> put_req_header("accept", "application/json")
-    |> put_req_header("content-type", "application/json")
-    |> put_req_header("authorization", "Bearer #{token.value}")
   end
 
   defp unauthenticated_conn do
@@ -142,25 +119,40 @@ defmodule Bonfire.Notify.Web.MastoPushApiTest do
       assert second_response["alerts"]["mention"] == false
     end
 
-    test "registering a second device keeps the first (multi-device)", %{conn: conn, user: user} do
+    test "a second device keeps the first, since each client authorises for itself", %{user: user} do
       endpoint_a = "https://push.example.com/device-a-#{Faker.UUID.v4()}"
       endpoint_b = "https://push.example.com/device-b-#{Faker.UUID.v4()}"
 
-      resp_a = create_subscription(conn, endpoint: endpoint_a)
-      resp_b = create_subscription(conn, endpoint: endpoint_b)
+      # two devices means two authorisations: each app install does its own OAuth and holds its own token
+      resp_a = create_subscription(masto_authenticated_conn(user), endpoint: endpoint_a)
+      resp_b = create_subscription(masto_authenticated_conn(user), endpoint: endpoint_b)
 
-      # Distinct subscriptions, not a replacement
       refute resp_a["id"] == resp_b["id"]
       assert resp_a["endpoint"] == endpoint_a
       assert resp_b["endpoint"] == endpoint_b
 
-      # Both device links persist for the user
       endpoints =
         Bonfire.Notify.WebPush.list_subscriptions(user.id)
-        |> Enum.map(& &1.push_subscription.endpoint)
+        |> Enum.map(& &1.push_device.address)
         |> Enum.sort()
 
-      assert Enum.sort([endpoint_a, endpoint_b]) == endpoints
+      assert Enum.sort([endpoint_a, endpoint_b]) == endpoints,
+             "subscribing on one device must leave the person's other devices alone"
+    end
+
+    test "one authorisation subscribing a new endpoint moves rather than accumulates", %{
+      conn: conn,
+      user: user
+    } do
+      endpoint_a = "https://push.example.com/moved-from-#{Faker.UUID.v4()}"
+      endpoint_b = "https://push.example.com/moved-to-#{Faker.UUID.v4()}"
+
+      create_subscription(conn, endpoint: endpoint_a)
+      create_subscription(conn, endpoint: endpoint_b)
+
+      # Mastodon's contract is one push subscription per access token, so the same client saying "reach me here" means here instead. A unique index makes that true rather than hoped, which is why the endpoint has to actually replace
+      assert [subscription] = Bonfire.Notify.WebPush.list_subscriptions(user.id)
+      assert subscription.push_device.address == endpoint_b
     end
 
     test "returns 401 without authorization", %{} do
@@ -181,15 +173,19 @@ defmodule Bonfire.Notify.Web.MastoPushApiTest do
       assert Map.has_key?(response, "error")
     end
 
-    test "includes new alert types in defaults", %{conn: conn} do
+    test "a type the client didn't ask for comes back false", %{conn: conn} do
       response =
         conn
         |> post("/api/v1/push/subscription", subscription_params())
         |> json_response(200)
 
-      assert response["alerts"]["follow_request"] == true
+      # the API documents every `data[alerts][*]` as defaulting to false, so a type this subscription said nothing about is one it does not want. We used to substitute our own defaults here and report `follow_request` as true to a client that never asked for it
+      assert response["alerts"]["follow_request"] == false
       assert response["alerts"]["admin.sign_up"] == false
       assert response["alerts"]["admin.report"] == false
+
+      assert response["alerts"]["mention"] == true,
+             "and what it did ask for comes back as asked"
     end
 
     test "allows setting new alert types explicitly", %{conn: conn} do
@@ -219,7 +215,7 @@ defmodule Bonfire.Notify.Web.MastoPushApiTest do
       # Create subscription for another user
       other_account = Fake.fake_account!()
       other_user = Fake.fake_user!(other_account)
-      other_conn = build_authenticated_conn(other_user)
+      other_conn = masto_authenticated_conn(other_user)
       create_subscription(other_conn)
 
       # My GET shouldn't see other user's subscription
