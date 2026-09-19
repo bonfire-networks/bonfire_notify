@@ -222,7 +222,30 @@ defmodule Bonfire.Notify.WebPush do
   end
 
   @doc """
+  Turns push off for one person on one browser, by that browser's endpoint.
+
+  Their subscription goes; the device row only goes when nobody is subscribed to it any more. That order is what makes a shared browser safe: deleting the device because one account turned push off would silently unsubscribe every other account signed into it.
+
+  Answers `:last_one` when the device went too, since that is when the browser's own subscription is worth dropping, and `:others_remain` when it did not.
+  """
+  def unsubscribe(user_id, endpoint) when is_binary(user_id) and is_binary(endpoint) do
+    with %PushDevice{} = device <- WebPushDevice.get_by_endpoint(endpoint),
+         {:ok, _gone} <- UserPushSubscription.unsubscribe(user_id, device.id) do
+      if repo().exists?(from(us in UserPushSubscription, where: us.push_device_id == ^device.id)) do
+        {:ok, :others_remain}
+      else
+        repo().delete(device)
+        {:ok, :last_one}
+      end
+    else
+      _ -> {:error, :not_found}
+    end
+  end
+
+  @doc """
   Removes a browser's device row by endpoint, and with it everyone's links to it.
+
+  For a push service telling us an endpoint is gone, which is about the device rather than about anyone's choice. A person turning push off is `unsubscribe/2`.
   """
   def remove_subscription_by_endpoint(endpoint) when is_binary(endpoint) do
     from(d in PushDevice,

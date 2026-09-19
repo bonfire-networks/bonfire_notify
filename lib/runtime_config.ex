@@ -3,6 +3,7 @@ defmodule Bonfire.Notify.RuntimeConfig do
 
   import Untangle
   require Bonfire.Common.Config
+  use Bonfire.Common.Localise
 
   @behaviour Bonfire.Common.ConfigModule
   def config_module, do: true
@@ -90,6 +91,20 @@ defmodule Bonfire.Notify.RuntimeConfig do
         "quoted_update",
         "admin.sign_up",
         "admin.report"
+      ]
+
+    # One getting-started step, declared here because turning notifications on is this extension's feature. Its action is the card that asks this browser for permission rather than a link somewhere, since that flow needs the component that owns it, and the card renders nothing where the browser has already refused. The step is done once notifications reach this person on any device
+    config :bonfire_ui_common, Bonfire.UI.Common.WidgetGettingStartedLive,
+      actions_registry: [
+        notifications: %{
+          title: l("Turn on notifications"),
+          rationale: l("So a reply or a message reaches you even when this tab isn't open."),
+          cta_kind: :stateful_component,
+          cta_component: Bonfire.Notify.Settings.PushNotificationsLive,
+          cta_path: nil,
+          needs: Bonfire.Notify.UserPushSubscription,
+          done?: &Bonfire.Notify.UserPushSubscription.any_active?/1
+        }
       ]
 
     # The channels a notification can be delivered on, in the order they appear to the user. A channel whose `configured?/0` is false is skipped, so an instance without VAPID keys or a native adapter simply has fewer of them

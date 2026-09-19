@@ -48,6 +48,17 @@ defmodule Bonfire.Notify.WebPushDevice do
   end
 
   @doc """
+  A Web Push device row by the endpoint its browser knows it as, whichever client registered it.
+
+  Across both providers, because an endpoint is the one thing the browser can tell us about itself and it does not know which of our paths it was registered through.
+  """
+  def get_by_endpoint(endpoint) when is_binary(endpoint) do
+    Enum.find_value(@providers, fn provider -> PushDevice.get_by_address(provider, endpoint) end)
+  end
+
+  def get_by_endpoint(_), do: nil
+
+  @doc """
   Finds or creates a Web Push device row by its endpoint, refreshing whatever it sent with it.
 
   A provider this channel doesn't claim goes straight to the changeset, which is where a caller's mistake belongs: looking it up first would pin an unknown value into a query over an enum column and raise.

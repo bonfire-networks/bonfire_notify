@@ -69,9 +69,14 @@ if Application.compile_env(:bonfire_api_graphql, :modularity) != :disabled and
           with {:ok, user} <- GraphQL.current_user_or_not_logged_in(info) do
             # registering says where to reach someone, not what to send them: what they are notified about is a per-verb, per-channel setting on the account. Only `Bonfire.Notify.API.MastoPushAdapter` stores an alerts map, because only that API's rules need one
             case NativePush.register(user, input) do
-              {:ok, device} -> {:ok, device}
-              {:error, %Ecto.Changeset{} = changeset} -> {:error, changeset_error(changeset)}
-              {:error, reason} -> {:error, reason}
+              {:ok, device} ->
+                {:ok, device}
+
+              {:error, %Ecto.Changeset{} = changeset} ->
+                {:error, Bonfire.Common.Errors.error_msg(changeset)}
+
+              {:error, reason} ->
+                {:error, reason}
             end
           end
         end)
@@ -90,17 +95,6 @@ if Application.compile_env(:bonfire_api_graphql, :modularity) != :disabled and
           end
         end)
       end
-    end
-
-    defp changeset_error(%Ecto.Changeset{} = changeset) do
-      changeset
-      |> Ecto.Changeset.traverse_errors(fn {msg, opts} ->
-        Enum.reduce(opts, msg, fn {key, value}, acc ->
-          String.replace(acc, "%{#{key}}", to_string(value))
-        end)
-      end)
-      |> Enum.map(fn {key, values} -> "#{key}: #{Enum.join(values, ", ")}" end)
-      |> Enum.join("; ")
     end
   end
 end

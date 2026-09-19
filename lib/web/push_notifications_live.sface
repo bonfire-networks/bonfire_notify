@@ -1,6 +1,12 @@
-<div id={"push-settings-#{@id}"} phx-hook="PushSettingsHook" data-vapid-key={@vapid_public_key}>
+{!-- `phx-target` so the hook's events go to this component wherever it is rendered, rather than depending on the DOM walk that resolves an untargeted event to its owner --}
+<div
+  id={"push-settings-#{@id}"}
+  phx-hook="PushSettingsHook"
+  phx-target={@myself}
+  data-vapid-key={@vapid_public_key}
+>
   {!-- PWA Install prompt --}
-  <div id="pwa-install-section" class="hidden mb-4">
+  <div :if={@variant == :full} id="pwa-install-section" class="hidden mb-4">
     <div class="flex items-center justify-between p-3 rounded-xl bg-success/10 border border-success/20">
       <div class="flex items-center gap-3">
         <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-success/20 text-success">
@@ -18,71 +24,78 @@
     </div>
   </div>
 
-  {!-- Warnings --}
-  <div
-    :if={!@push_supported}
-    class="flex items-center gap-3 p-3 rounded-xl bg-warning/10 border border-warning/20 mb-4"
-  >
-    <#Icon iconify="ph:warning-duotone" class="size-5 text-warning flex-shrink-0" />
-    <span class="text-sm text-base-content">{l("Push notifications are not supported in this browser")}</span>
-  </div>
-
-  <div
-    :if={!@vapid_public_key}
-    class="flex items-center gap-3 p-3 rounded-xl bg-info/10 border border-info/20 mb-4"
-  >
-    <#Icon iconify="ph:info-duotone" class="size-5 text-info flex-shrink-0" />
-    <span class="text-sm text-base-content">{l("Push notifications are not configured on this instance")}</span>
-  </div>
-
-  <div :if={@vapid_public_key && @push_supported}>
-    {!-- Enable/Disable toggle --}
-    <div class={
-      "flex items-center justify-between p-3 rounded-xl border",
-      "border-primary/20 bg-primary/5": @current_device_subscribed,
-      "border-secondary bg-base-200/30": !@current_device_subscribed
-    }>
-      <div class="flex items-center gap-3">
-        <span class={
-          "flex items-center justify-center w-8 h-8 rounded-lg",
-          "bg-primary/20 text-primary": @current_device_subscribed,
-          "bg-base-content/10 text-muted": !@current_device_subscribed
-        }>
-          <#Icon iconify="ph:bell-duotone" class="size-4" />
-        </span>
-        <div>
-          <p class="text-sm font-medium">{l("Push notifications")}</p>
-          <p class="text-xs text-base-content">
-            {#if @current_device_subscribed}
-              {l("Enabled on this device")}
-            {#else}
-              {l("Get notified even when the app is closed")}
-            {/if}
-          </p>
-        </div>
-      </div>
-      <button
-        :if={!@current_device_subscribed}
-        type="button"
-        class="btn btn-primary btn-sm"
-        phx-click="enable_push"
-        phx-target={@myself}
-      >
-        {l("Enable")}
-      </button>
-      <button
-        :if={@current_device_subscribed}
-        type="button"
-        class="btn btn-ghost btn-sm text-error/70 hover:text-error hover:bg-error/10"
-        phx-click="disable_push"
-        phx-target={@myself}
-      >
-        {l("Disable")}
-      </button>
+  {!-- Warnings, where somebody came to manage this. A prompt elsewhere stays quiet about a browser that cannot do it at all --}
+  {#if !@push_supported}
+    <div class="flex items-center gap-3 p-3 rounded-xl bg-warning/10 border border-warning/20 mb-4">
+      <#Icon iconify="ph:warning-duotone" class="size-5 text-warning flex-shrink-0" />
+      <span class="text-sm text-base-content">{l("Push notifications are not supported in this browser")}</span>
     </div>
+  {#elseif !@vapid_public_key}
+    <div
+      :if={!@vapid_public_key}
+      class="flex items-center gap-3 p-3 rounded-xl bg-info/10 border border-info/20 mb-4"
+    >
+      <#Icon iconify="ph:info-duotone" class="size-5 text-info flex-shrink-0" />
+      <span class="text-sm text-base-content">{l("Push notifications are not enabled on this server")}</span>
+    </div>
+  {#elseif @variant != :full && @current_device_subscribed}
+    <div class="flex items-center gap-3 p-3 rounded-xl bg-success/10 border border-success/20 mb-4">
+      <#Icon iconify="ph:success-duotone" class="size-5 text-success flex-shrink-0" />
+      <span class="text-sm text-base-content">{l("Push notifications enabled")}</span>
+    </div>
+    {!-- compact is an offer rather than a control panel, so it waits for the browser to report (no flash of a prompt that is about to vanish), shows nothing once this browser is subscribed, and nothing where the browser has blocked us --}
+  {#else}
+    <div>
+      {!-- Enable/Disable toggle --}
+      <div class={
+        "flex items-center justify-between p-3 rounded-xl border",
+        "border-primary/20 bg-primary/5": @current_device_subscribed,
+        "border-secondary bg-base-200/30": !@current_device_subscribed
+      }>
+        <div class="flex items-center gap-3">
+          <span class={
+            "flex items-center justify-center w-8 h-8 rounded-lg",
+            "bg-primary/20 text-primary": @current_device_subscribed,
+            "bg-base-content/10 text-muted": !@current_device_subscribed
+          }>
+            <#Icon iconify="ph:bell-duotone" class="size-4" />
+          </span>
+          <div>
+            <p class="text-sm font-medium">{l("Push notifications")}</p>
+            {!-- a blocked origin cannot be asked again: the browser resolves the request to `denied` without prompting, so saying where to change it is the only useful thing left --}
+            <p class="text-xs text-base-content">
+              {#if @current_device_subscribed}
+                {l("Enabled on this device")}
+              {#elseif @permission == "denied"}
+                {l("Blocked in your browser settings for this site")}
+              {#else}
+                {l("Get notified even when the app is closed")}
+              {/if}
+            </p>
+          </div>
+        </div>
+        <button
+          :if={!@current_device_subscribed and @permission != "denied"}
+          type="button"
+          class="btn btn-primary btn-sm"
+          phx-click="enable_push"
+          phx-target={@myself}
+        >
+          {l("Enable")}
+        </button>
+        <button
+          :if={@current_device_subscribed}
+          type="button"
+          class="btn btn-ghost btn-sm text-error/70 hover:text-error hover:bg-error/10"
+          phx-click="disable_push"
+          phx-target={@myself}
+        >
+          {l("Disable")}
+        </button>
+      </div>
 
-    {!-- Notification type preferences --}
-    {!-- 
+      {!-- Notification type preferences, superseded by the Push column in the notification preferences panel this component is shown inside: one switch per category per channel, beside the switch for whether that category reaches the notifications feed at all. These write the older coarse keys (one per group of verbs), which `Bonfire.Notify.Preferences` still reads as a fallback so nobody's saved choice is lost, so rendering them too would put two sets of switches for the same thing on one page, where the newer one wins and these would appear to do nothing. Parked until those keys themselves go --}
+      {!--
     <div :if={@current_device_subscribed} class="mt-4">
       <p class="text-xs font-medium text-muted uppercase tracking-wider mb-2 px-1">{l("Notify me about")}</p>
       <form phx-change="Bonfire.Common.Settings:set">
@@ -162,66 +175,75 @@
     </div>
     --}
 
-    {!-- Registered devices --}
-    <div :if={@subscriptions != []} class="mt-4">
-      <p class="text-xs font-medium text-muted uppercase tracking-wider mb-2 px-1">{l("Devices")}</p>
-      <div class="space-y-1.5">
-        {#for sub <- @subscriptions}
-          {#case {browser_from_endpoint(sub.push_device.address), is_current_device?(sub, @current_endpoint)}}
-            {#match {browser, is_current}}
-              <div class={
-                "flex items-center justify-between p-2.5 rounded-xl transition-colors",
-                "bg-primary/5 border border-primary/15": is_current,
-                "bg-base-200/30 border border-transparent hover:border-secondary": !is_current
-              }>
-                <div class="flex items-center gap-3">
-                  <span class={
-                    "flex items-center justify-center w-8 h-8 rounded-lg",
-                    "bg-primary/15 text-primary": is_current,
-                    "bg-base-content/5 text-muted": !is_current
-                  }>
-                    <#Icon iconify="ph:globe-duotone" class="size-4" />
-                  </span>
-                  <div>
-                    <p class="text-sm font-medium flex items-center gap-2">
-                      {browser}
-                      <span :if={is_current} class="badge badge-primary badge-xs gap-0.5">
-                        <span class="w-1.5 h-1.5 rounded-full bg-primary-content animate-pulse" />
-                        {l("This device")}
-                      </span>
-                    </p>
-                    <p class="text-xs text-muted">
-                      <span :if={sub.push_device.last_used_at}>
-                        {Bonfire.Common.DatesTimes.date_from_now(sub.push_device.last_used_at)}</span>
-                      <span :if={sub.push_device.last_status == :error} class="text-error">
-                        · {l("Delivery failed")}</span>
-                    </p>
+      {!-- Registered devices --}
+      <div :if={@subscriptions != []} class="mt-4">
+        <p class="text-xs font-medium text-muted uppercase tracking-wider mb-2 px-1">{l("Devices")}</p>
+        <div class="space-y-1.5">
+          {#for sub <- @subscriptions}
+            {!-- what the device called itself if it did, and what its push service suggests if it didn't --}
+            {#case {Bonfire.Notify.PushDevice.label(sub.push_device), is_current_device?(sub, @current_endpoint)}}
+              {#match {label, is_current}}
+                <div class={
+                  "flex items-center justify-between p-2.5 rounded-xl transition-colors",
+                  "bg-primary/5 border border-primary/15": is_current,
+                  "bg-base-200/30 border border-transparent hover:border-secondary": !is_current
+                }>
+                  <div class="flex items-center gap-3">
+                    <span class={
+                      "flex items-center justify-center w-8 h-8 rounded-lg",
+                      "bg-primary/15 text-primary": is_current,
+                      "bg-base-content/5 text-muted": !is_current
+                    }>
+                      <#Icon iconify="ph:globe-duotone" class="size-4" />
+                    </span>
+                    <div>
+                      <p class="text-sm font-medium flex items-center gap-2">
+                        {label}
+                        <span :if={is_current} class="badge badge-primary badge-xs gap-0.5">
+                          <span class="w-1.5 h-1.5 rounded-full bg-primary-content animate-pulse" />
+                          {l("This device")}
+                        </span>
+                      </p>
+                      <p class="text-xs text-muted">
+                        {!-- what the client said about itself, which tells a Chrome-on-Android row from a Chrome-on-macOS one where the endpoint alone cannot. Nothing for a client that said nothing, nor for the bare fallback, which adds nothing beside the browser --}
+                        {#case Bonfire.Notify.PushDevice.platform(sub.push_device)}
+                          {#match nil}
+                          {#match "web"}
+                          {#match platform}
+                            <span>{platform} ·</span>
+                        {/case}
+                        <span :if={sub.push_device.last_used_at}>
+                          {Bonfire.Common.DatesTimes.date_from_now(sub.push_device.last_used_at)}</span>
+                        <span :if={sub.push_device.last_status == :error} class="text-error">
+                          · {l("Delivery failed")}</span>
+                      </p>
+                    </div>
                   </div>
+                  <button
+                    type="button"
+                    class="btn btn-ghost btn-xs text-base-content/30 hover:text-error hover:bg-error/10"
+                    phx-click="remove_device"
+                    phx-value-id={sub.push_device_id}
+                    phx-target={@myself}
+                    data-confirm={l("Remove this device from push notifications?")}
+                    aria-label={l("Remove device")}
+                  >
+                    <#Icon iconify="ph:x-duotone" class="size-4" />
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  class="btn btn-ghost btn-xs text-base-content/30 hover:text-error hover:bg-error/10"
-                  phx-click="remove_device"
-                  phx-value-id={sub.push_device_id}
-                  phx-target={@myself}
-                  data-confirm={l("Remove this device from push notifications?")}
-                  aria-label={l("Remove device")}
-                >
-                  <#Icon iconify="ph:x-duotone" class="size-4" />
-                </button>
-              </div>
-          {/case}
-        {/for}
+            {/case}
+          {/for}
+        </div>
+      </div>
+
+      {!-- Empty state --}
+      <div
+        :if={@variant == :full and @subscriptions == [] and !@current_device_subscribed}
+        class="flex flex-col items-center gap-2 py-8 text-base-content/30"
+      >
+        <#Icon iconify="ph:bell-slash-duotone" class="size-8" />
+        <p class="text-sm">{l("No devices registered")}</p>
       </div>
     </div>
-
-    {!-- Empty state --}
-    <div
-      :if={@subscriptions == [] && !@current_device_subscribed}
-      class="flex flex-col items-center gap-2 py-8 text-base-content/30"
-    >
-      <#Icon iconify="ph:bell-slash-duotone" class="size-8" />
-      <p class="text-sm">{l("No devices registered")}</p>
-    </div>
-  </div>
+  {/if}
 </div>

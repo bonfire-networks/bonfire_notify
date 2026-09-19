@@ -12,6 +12,8 @@ defmodule Bonfire.Notify.PushDevice do
   """
 
   use Ecto.Schema
+  use Bonfire.Common.Config
+  use Bonfire.Common.Localise
   import Ecto.Query
   import Bonfire.Common.Config, only: [repo: 0]
 
@@ -88,6 +90,74 @@ defmodule Bonfire.Notify.PushDevice do
   end
 
   def platform(_), do: nil
+
+  @doc """
+  What to call a device in a list of someone's devices.
+
+  What the client called itself wins, since a person who named their phone "Work iPhone" has said the most useful thing anyone can say about it. Failing that, what can be worked out: which browser issued a Web Push endpoint, or which platform a native client declared. Failing both, the transport, which is at least true.
+
+      iex> Bonfire.Notify.PushDevice.label(%Bonfire.Notify.PushDevice{device_name: "Work iPhone"})
+      "Work iPhone"
+
+      iex> Bonfire.Notify.PushDevice.label(%Bonfire.Notify.PushDevice{provider: :web, address: "https://push.apple.com/abc"})
+      "Safari or iOS"
+
+      iex> Bonfire.Notify.PushDevice.label(%Bonfire.Notify.PushDevice{provider: :web, address: "https://push.example.test/abc"})
+      "Browser"
+
+      iex> Bonfire.Notify.PushDevice.label(%Bonfire.Notify.PushDevice{provider: :apns, device_agent: "ios"})
+      "ios"
+  """
+  def label(%PushDevice{device_name: name}) when is_binary(name) and name != "", do: name
+
+  def label(%PushDevice{provider: provider} = device) do
+    if provider in [:web, :web_masto],
+      do: client_hint(device),
+      else: platform(device) || to_string(provider)
+  end
+
+  @doc """
+  A guess at what kind of client a Web Push endpoint belongs to, for display only.
+
+  What the endpoint's host actually identifies is the **push service** that issued it, and what that implies about the client is approximate, because a service spans browsers and platforms: Google's FCM serves Chrome on any operating system as well as Android apps, and Apple's serves Safari and iOS. Hence "Chrome or Android" rather than a claim to know which, and hence a hint rather than an answer. Where a device said what it is (`device_name`, `device_agent`) that is better evidence and `label/1` prefers it.
+
+  Beside `platform/1` rather than in the panel that shows it, since reading a stored row is the same job wherever it is rendered, and the settings page, the preferences panel and the API would otherwise each have their own guess.
+
+      iex> Bonfire.Notify.PushDevice.client_hint("https://fcm.googleapis.com/fcm/send/abc")
+      "Chrome or Android"
+
+      iex> Bonfire.Notify.PushDevice.client_hint("https://updates.push.services.mozilla.com/wpush/v2/abc")
+      "Firefox"
+
+      iex> Bonfire.Notify.PushDevice.client_hint(nil)
+      "Browser"
+  """
+  def client_hint(%PushDevice{address: address}), do: client_hint(address)
+
+  def client_hint(endpoint) when is_binary(endpoint) do
+    Enum.find_value(push_service_hints(), "Browser", fn {host, hint} ->
+      if String.contains?(endpoint, host), do: hint
+    end)
+  end
+
+  def client_hint(_), do: "Browser"
+
+  defp push_service_hints do
+    Config.get(
+      [__MODULE__, :push_service_hints],
+      [
+        {"fcm.googleapis.com", "Chrome or Android"},
+        {"push.apple.com", "Safari or iOS"},
+        {"mozilla.com", "Firefox"},
+        {"notify.windows.com", "Edge"}
+      ],
+      name: l("What each push service suggests about a device"),
+      description:
+        l(
+          "Which kind of client each push service's endpoints usually belong to, shown when a device has not said what it is."
+        )
+    )
+  end
 
   @doc """
   Records what happened to a device: delivered, gone, or failed.

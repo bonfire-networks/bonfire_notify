@@ -11,9 +11,9 @@ defmodule Bonfire.Notify.UserPushSubscription do
     otp_app: :bonfire_notify,
     source: "bonfire_notify_user_push_subscription"
 
+  use Bonfire.Common.Utils
+  use Bonfire.Common.Repo
   require Needle.Changesets
-  import Ecto.Query
-  import Bonfire.Common.Config, only: [repo: 0]
   alias Bonfire.Notify.PushDevice
   alias Bonfire.Notify.UserPushSubscription
   alias Ecto.Changeset
@@ -74,6 +74,25 @@ defmodule Bonfire.Notify.UserPushSubscription do
         |> repo().update()
     end
   end
+
+  @doc """
+  Whether this person could be reached by a push at all, on any device.
+
+  One indexed existence check, for callers that only want the yes or no: whether to offer turning notifications on, or whether there is any point assembling something. Across every transport, since the question is whether anything reaches them rather than which client it is.
+  """
+  def any_active?(user_id) when is_binary(user_id) do
+    from(us in UserPushSubscription,
+      join: d in PushDevice,
+      on: d.id == us.push_device_id,
+      where: us.id == ^user_id and d.active == true
+    )
+    |> repo().exists?()
+  end
+
+  # a user as well as their id, since callers asking this hold the person rather than an id (a getting-started step, a settings panel)
+  def any_active?(%{} = user), do: any_active?(id(user))
+
+  def any_active?(_), do: false
 
   @doc """
   One person's subscription to one device, without its device loaded.

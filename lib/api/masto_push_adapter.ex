@@ -45,18 +45,20 @@ defmodule Bonfire.Notify.API.MastoPushAdapter do
         {:ok, parsed_attrs} ->
           user_id = id(current_user)
 
+          access_token_id = e(conn.assigns, :current_token, :id, nil)
+
           device_attrs =
             parsed_attrs
             |> Map.take([:address, :auth_key, :p256dh_key])
             |> maybe_add_device_info(conn)
-            # a Mastodon client is what will read anything sent to this endpoint, which is how delivery knows to shape its payload Mastodon's way rather than inferring it
-            |> Map.put(:provider, :web_masto)
+            # what will read anything sent to this endpoint, which is how delivery knows which shape to send rather than inferring it
+            |> Map.put(:provider, provider_for(conn))
 
           # the authorisation this came from, recorded because only this endpoint knows it, and because Mastodon's payload has to carry the token so a client can fetch what it is being told about
           user_attrs =
             parsed_attrs
             |> Map.take([:alerts, :policy])
-            |> Map.put(:access_token_id, e(conn.assigns, :current_token, :id, nil))
+            |> Map.put(:access_token_id, access_token_id)
 
           # per the Mastodon spec this replaces whatever this authorisation was subscribed to, and leaves the person's other devices and other clients alone
           UserPushSubscription.unsubscribe_by_access_token(user_attrs[:access_token_id])
@@ -132,7 +134,7 @@ defmodule Bonfire.Notify.API.MastoPushAdapter do
               RestAdapter.json(conn, format_response(updated, user_sub.push_device))
 
             {:error, changeset} ->
-              RestAdapter.error_fn({:error, changeset_error(changeset)}, conn)
+              RestAdapter.error_fn({:error, Bonfire.Common.Errors.error_msg(changeset)}, conn)
           end
       end
     end)
@@ -163,7 +165,21 @@ defmodule Bonfire.Notify.API.MastoPushAdapter do
   end
 
   defp respond_with_subscription({:error, changeset}, _device, conn) do
-    RestAdapter.error_fn({:error, changeset_error(changeset)}, conn)
+    RestAdapter.error_fn({:error, Bonfire.Common.Errors.error_msg(changeset)}, conn)
+  end
+
+  @doc """
+  Which provider a subscription created here is, meaning which shape of payload its client can read.
+
+  The route says so where it knows: `POST /api/v1-bonfire/push/subscription` is the same action reached by a path that declares the caller as one of ours, which is how our service worker re-registers a rotated endpoint without being mistaken for a Mastodon client. Left unsaid, it follows how the request authenticated, since a Mastodon client authorises with a token while our own pages carry a session.
+
+  Getting this wrong is not a cosmetic mistake: a subscription of ours marked as a Mastodon client's is sent a shape it cannot read, and having no token to carry, is in fact sent nothing at all.
+  """
+  def provider_for(%Plug.Conn{} = conn) do
+    e(conn.assigns, :push_provider, nil) ||
+      if e(conn.assigns, :current_token, :id, nil),
+        do: :web_masto,
+        else: WebPushDevice.provider()
   end
 
   # stored as sent, and parsed only when something displays it: `Bonfire.Notify.PushDevice.platform/1` does that, so a better parser later improves rows that already exist
@@ -188,18 +204,6 @@ defmodule Bonfire.Notify.API.MastoPushAdapter do
   end
 
   defp maybe_put_policy(attrs, _invalid), do: attrs
-
-  defp changeset_error(%Ecto.Changeset{} = changeset) do
-    Ecto.Changeset.traverse_errors(changeset, fn {msg, opts} ->
-      Enum.reduce(opts, msg, fn {key, value}, acc ->
-        String.replace(acc, "%{#{key}}", to_string(value))
-      end)
-    end)
-    |> Enum.map(fn {k, v} -> "#{k}: #{Enum.join(v, ", ")}" end)
-    |> Enum.join("; ")
-  end
-
-  defp changeset_error(other), do: inspect(other)
 
   @doc """
   Formats a subscription into Mastodon API response format.

@@ -25,6 +25,9 @@ defmodule Bonfire.Notify.Web.Routes do
         pipe_through([:load_current_auth, :load_authorization])
 
         get "/streaming", StreamingController, :stream
+
+        # the same controller and action as `POST /api/v1/push/subscription`, on a path that says whose client is asking. What a subscription needs is identical; what differs is the shape of payload the thing at the other end can read, and a caller knows that about itself where we would be guessing. Our service worker posts here when a push service rotates its endpoint, carrying the session cookie rather than a token
+        post "/push/subscription", MastoPushController, :create, assigns: %{push_provider: :web}
       end
 
       # pages only admins can view

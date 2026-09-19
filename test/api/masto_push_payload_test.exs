@@ -99,6 +99,40 @@ defmodule Bonfire.Notify.API.MastoPushPayloadTest do
            "a verb Mastodon has no name for cannot be described to it, so it is not a target for one"
   end
 
+  test "our own client subscribes through a path that says so", %{alice: alice} do
+    # the same controller and action as the Mastodon endpoint, on a path that declares whose client is asking: what a subscription needs is identical, and only the shape of payload its reader can understand differs. This is how the service worker re-registers a rotated endpoint
+    response =
+      conn(user: alice, account: alice.account)
+      |> put_req_header("content-type", "application/json")
+      |> post("/api/v1-bonfire/push/subscription", %{
+        "subscription" => valid_push_subscription_map("https://push.bonfire.local/our-sw")
+      })
+      |> json_response(200)
+
+    device = repo().get!(PushDevice, response["id"])
+
+    assert device.provider == :web,
+           "marking it as a Mastodon client's would send it a shape it cannot read"
+
+    assert [subscription] = WebPush.list_subscriptions(alice.id)
+
+    refute subscription.access_token_id,
+           "there is no authorisation to record, and Mastodon's payload is the only thing that needs one"
+  end
+
+  test "a client of ours holding a token is still a client of ours", %{alice: alice} do
+    # the reason the path is explicit rather than inferred from the authentication: one of our own clients may well authorise with OAuth one day, and inferring would then send it Mastodon's shape
+    response =
+      masto_authenticated_conn(alice)
+      |> post("/api/v1-bonfire/push/subscription", %{
+        "subscription" =>
+          valid_push_subscription_map("https://push.bonfire.local/ours-with-token")
+      })
+      |> json_response(200)
+
+    assert repo().get!(PushDevice, response["id"]).provider == :web
+  end
+
   test "one activity reaches both, each in the shape its client can read", %{
     alice: alice,
     bob: bob,
