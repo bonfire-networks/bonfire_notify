@@ -40,6 +40,64 @@ defmodule Bonfire.Notify.Web.MastoStreamingWebSocketTest do
 
   # --- Connection tests: all 3 auth methods ---
 
+  describe "mobile session recovery" do
+    test "an expired token cannot reconnect or read REST data, but a new token can", %{me: me, token: token} do
+      assert {:ok, _} = connect_ws(token)
+      stored = Bonfire.Common.Config.repo().get_by!(Boruta.Ecto.Token, value: token)
+
+      expired =
+        stored
+        |> Ecto.Changeset.change(expires_at: System.system_time(:second) - 60)
+        |> Bonfire.Common.Config.repo().update!()
+
+      Boruta.Ecto.TokenStore.invalidate(to_oauth_schema(expired))
+      assert :error = connect_ws(token)
+
+      build_conn()
+      |> put_req_header("authorization", "Bearer #{token}")
+      |> get("/api/v1/accounts/verify_credentials")
+      |> json_response(401)
+
+      assert {:ok, replacement} = create_access_token(me)
+      assert {:ok, _} = connect_ws(replacement)
+
+      response =
+        build_conn()
+        |> put_req_header("authorization", "Bearer #{replacement}")
+        |> get("/api/v1/accounts/verify_credentials")
+        |> json_response(200)
+
+      assert response["id"] == me.id
+    end
+
+    test "revoked tokens cannot reconnect", %{token: token} do
+      assert {:ok, _} = connect_ws(token)
+      oauth_token = AccessTokensAdapter.get_by(value: token)
+      assert {:ok, _} = AccessTokensAdapter.revoke(oauth_token)
+      assert :error = connect_ws(token)
+    end
+
+    test "a new connection can resubscribe after its previous process exits", %{token: token} do
+      subscribe = fn ->
+        {:ok, state} = init_ws(token)
+        WS.handle_in(
+          {Jason.encode!(%{"type" => "subscribe", "stream" => "user"}), [opcode: :text]},
+          state
+        )
+      end
+
+      first = Task.async(subscribe)
+      assert {:ok, first_state} = Task.await(first)
+      refute Process.alive?(first.pid)
+      assert first_state.subscriptions["user"] != []
+
+      second = Task.async(subscribe)
+      assert {:ok, second_state} = Task.await(second)
+      assert second_state.user.id == first_state.user.id
+      assert second_state.subscriptions == first_state.subscriptions
+    end
+  end
+
   describe "connect/1 auth methods" do
     test "auth via access_token query param", %{token: token} do
       assert {:ok, state} =
