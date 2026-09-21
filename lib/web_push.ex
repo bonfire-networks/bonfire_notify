@@ -222,6 +222,20 @@ defmodule Bonfire.Notify.WebPush do
   end
 
   @doc """
+  Whether a notification reaches this person at this endpoint, without a page open.
+
+  Not the question a page can answer on its own. All a page sees is whether the browser holds a subscription, and a shared browser keeps that subscription while one of the people signed into it turns push off, so only the link says whether *this* person would be reached. What an open page's fallback notification turns on, which is why it asks the server rather than deciding alone.
+  """
+  def subscribed_at?(user_id, endpoint) when is_binary(user_id) and is_binary(endpoint) do
+    active_web_links()
+    |> exclude(:preload)
+    |> where([us, d], us.id == ^user_id and d.address == ^endpoint)
+    |> repo().exists?()
+  end
+
+  def subscribed_at?(_user_id, _endpoint), do: false
+
+  @doc """
   Turns push off for one person on one browser, by that browser's endpoint.
 
   Their subscription goes; the device row only goes when nobody is subscribed to it any more. That order is what makes a shared browser safe: deleting the device because one account turned push off would silently unsubscribe every other account signed into it.

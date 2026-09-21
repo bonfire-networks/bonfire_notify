@@ -35,6 +35,9 @@ defmodule Bonfire.Notify.DataCase do
         ]
 
       import Bonfire.Notify.Test.FakeHelpers
+
+      # otherwise these run in both CI legs, since the backend leg excludes `:ui` and the ui leg excludes `:backend`, and a module carrying neither tag is in neither exclusion
+      @moduletag :backend
     end
   end
 

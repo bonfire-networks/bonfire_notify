@@ -120,11 +120,8 @@ defmodule Bonfire.Notify.RuntimeConfig do
     config :bonfire, Oban,
       queues: [notify: String.to_integer(System.get_env("QUEUE_SIZE_NOTIFY", "2"))]
 
-    # Web push
-    config :bonfire_notify, Bonfire.Notify.WebPush,
-      # adapter: Bonfire.Notify.WebPush.HttpAdapter,
-      retry_timeout: 1000,
-      max_attempts: 5
+    # How many times a delivery job is worth retrying. Read at compile time, since that is when Oban takes a worker's defaults
+    config :bonfire_notify, Bonfire.Notify.Worker, max_attempts: 5
 
     config :ex_nudge,
       vapid_public_key: System.get_env("WEB_PUSH_PUBLIC_KEY"),

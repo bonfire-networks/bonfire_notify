@@ -155,17 +155,31 @@ defmodule Bonfire.Notify.Settings.PushNotificationsLive do
   end
 
   @doc """
-  Says what a failed subscribe means, in terms of what to do about it.
+  Says what a failed subscribe means, in terms of what to do about it, and what still works.
 
-  A browser's own message is written for whoever wrote the browser: `AbortError` is what Firefox raises when it cannot reach a push service, and "AbortError" tells the person nothing they can act on. The technical detail (browser, worker state, protocol) still goes to the console for a bug report; what reaches the screen is the thing worth trying.
+  A browser's own message is written for whoever wrote the browser: `AbortError` is what Firefox raises when it cannot reach a push service, and "AbortError" tells the person nothing they can act on. The technical detail (browser, worker state, protocol) still goes to the console for a bug report; what reaches the screen is the thing worth trying, plus what they get in the meantime.
+
+  Because permission is asked for before the subscribe, a subscribe that fails usually leaves permission granted, and that is not "nothing worked": notifications still appear whenever a page is open. So the message turns on permission, not on the failure alone, and the two cases read differently.
   """
   def handle_event("push_subscription_error", %{"error" => error} = params, socket) do
-    {:noreply, assign_flash(socket, :error, subscribe_guidance(params["name"], error))}
+    {:noreply,
+     socket
+     |> assign_flash(
+       :error,
+       enable_failure_message(params["name"], error, params["permission"])
+     )}
+  end
+
+  @doc "What to tell somebody whose subscribe failed: what went wrong, then what still reaches them."
+  def enable_failure_message(name, message, permission) do
+    [subscribe_guidance(name, message), still_works_note(permission)]
+    |> Enum.reject(&is_nil/1)
+    |> Enum.join(" ")
   end
 
   defp subscribe_guidance("AbortError", _message) do
     l(
-      "Your browser could not reach a push notification service. That usually means this site is not served over HTTPS with a valid certificate, or the network is blocking the connection: another network, or a private window, is worth trying."
+      "Your browser could not set up push notifications: it could not reach a push service. That usually means this site is not served over HTTPS with a valid certificate, or the network is blocking the connection: another network, or a private window, is worth trying."
     )
   end
 
@@ -177,8 +191,21 @@ defmodule Bonfire.Notify.Settings.PushNotificationsLive do
   end
 
   defp subscribe_guidance(_name, message) do
-    l("Could not turn on notifications: %{error}", error: message)
+    l("Could not set up push notifications: %{error}", error: message)
   end
+
+  # permission survives a failed subscribe, so say which of the two situations this is: notifications that arrive whenever a page is open, or none at all outside Bonfire
+  defp still_works_note("granted") do
+    l("Notifications will still appear while Bonfire is open in a tab on this device.")
+  end
+
+  defp still_works_note(permission) when permission in ["denied", "default"] do
+    l(
+      "Until you allow notifications in your browser, you will only see them inside the Bonfire page."
+    )
+  end
+
+  defp still_works_note(_), do: nil
 
   # removes this person's subscription to the device, leaving the device for anyone else who uses it
   def handle_event("remove_device", %{"id" => push_device_id}, socket) do

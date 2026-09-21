@@ -12,15 +12,6 @@ defmodule Bonfire.Notify.Migrations do
 
     require Bonfire.Notify.UserPushSubscription.Migration
     Bonfire.Notify.UserPushSubscription.Migration.migrate_user_push_subscription(:up)
-
-    execute("""
-    CREATE TYPE notification_event AS ENUM (
-      'CREATED',
-      'REPLIED',
-      'TEST',
-      'MESSAGE'
-    )
-    """)
   end
 
   def down do
@@ -29,7 +20,5 @@ defmodule Bonfire.Notify.Migrations do
 
     require Bonfire.Notify.PushDevice.Migration
     Bonfire.Notify.PushDevice.Migration.migrate_push_device(:down)
-
-    execute("DROP TYPE notification_event")
   end
 end

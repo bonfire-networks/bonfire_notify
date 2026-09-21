@@ -41,7 +41,10 @@ defmodule Bonfire.Notify.Web.MastoStreamingWebSocketTest do
   # --- Connection tests: all 3 auth methods ---
 
   describe "mobile session recovery" do
-    test "an expired token cannot reconnect or read REST data, but a new token can", %{me: me, token: token} do
+    test "an expired token cannot reconnect or read REST data, but a new token can", %{
+      me: me,
+      token: token
+    } do
       assert {:ok, _} = connect_ws(token)
       stored = Bonfire.Common.Config.repo().get_by!(Boruta.Ecto.Token, value: token)
 
@@ -80,6 +83,7 @@ defmodule Bonfire.Notify.Web.MastoStreamingWebSocketTest do
     test "a new connection can resubscribe after its previous process exits", %{token: token} do
       subscribe = fn ->
         {:ok, state} = init_ws(token)
+
         WS.handle_in(
           {Jason.encode!(%{"type" => "subscribe", "stream" => "user"}), [opcode: :text]},
           state

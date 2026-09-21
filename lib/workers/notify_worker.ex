@@ -11,9 +11,12 @@ defmodule Bonfire.Notify.Worker do
   """
   @queue_atom :notify
 
+  # How many times a delivery is worth retrying before it is given up on. Compile-time because that is when Oban reads a worker's defaults, so changing it is a rebuild rather than a setting; a per-job override at insert time is what to add if that ever needs to be live
+  @max_attempts Application.compile_env(:bonfire_notify, [__MODULE__, :max_attempts], 5)
+
   use Oban.Worker,
     queue: @queue_atom,
-    max_attempts: 5
+    max_attempts: @max_attempts
 
   import Untangle
   import Ecto.Query

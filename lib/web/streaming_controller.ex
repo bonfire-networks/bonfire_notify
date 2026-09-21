@@ -122,7 +122,10 @@ defmodule Bonfire.Notify.Web.StreamingController do
         debug("[SSE] Received :stop_streaming, closing connection")
         conn
 
-      {Bonfire.UI.Common.Notifications, %{} = data} ->
+      {Bonfire.UI.Common.Notifications, %{} = broadcast} ->
+        # the live path broadcasts fields rather than a sentence, so that whoever receives it words it in their own language, which for a stream means here
+        data = Bonfire.UI.Common.Notifications.notification_fields(broadcast) || %{}
+
         debug(data[:title] || data[:message], "[SSE] Forwarding notification")
 
         event =

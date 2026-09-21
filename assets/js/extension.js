@@ -171,7 +171,11 @@ NotifyHooks.PushSettingsHook = {
 
       const permission = await Notification.requestPermission();
       if (permission !== 'granted') {
-        this.pushEventTo(this.el, 'push_subscription_error', { error: 'Permission denied' });
+        this.pushEventTo(this.el, 'push_subscription_error', {
+          error: 'Permission denied',
+          name: 'NotAllowedError',
+          permission: permission
+        });
         return;
       }
 
@@ -191,14 +195,17 @@ NotifyHooks.PushSettingsHook = {
         subscription: subscription.toJSON()
       });
 
+      this.announcePushChanged();
+
     } catch (error) {
       console.error('PushSettings: Subscription failed:', error.name, error.message, error);
       this.logSubscribeDiagnostics(error);
 
-      // the name as well as the message: the server turns a known failure into something the person can act on, while the console keeps the detail a bug report needs
+      // the name as well as the message: the server turns a known failure into something the person can act on, while the console keeps the detail a bug report needs. Permission too, since it survives a failed subscribe and decides whether notifications still arrive while a page is open
       this.pushEventTo(this.el, 'push_subscription_error', {
         error: error.message,
-        name: error.name
+        name: error.name,
+        permission: (typeof Notification === 'undefined') ? null : Notification.permission
       });
     }
   },
@@ -237,6 +244,7 @@ NotifyHooks.PushSettingsHook = {
       const subscription = await this.swRegistration.pushManager.getSubscription();
       if (subscription) {
         this.pushEventTo(this.el, 'push_subscription_disabled', { endpoint: subscription.endpoint });
+        this.announcePushChanged();
       }
     } catch (error) {
       console.error('PushSettings: Error disabling push:', error);
@@ -249,9 +257,15 @@ NotifyHooks.PushSettingsHook = {
     try {
       const subscription = await this.swRegistration?.pushManager.getSubscription();
       if (subscription) await subscription.unsubscribe();
+      this.announcePushChanged();
     } catch (error) {
       console.error('PushSettings: Error unsubscribing this browser:', error);
     }
+  },
+
+  // The notification component shows an in-page notification only where push is not doing it, and it lives on every page while this panel does not, so a change here is announced rather than pushed at it directly. It re-reads the subscription itself, so this carries no state.
+  announcePushChanged() {
+    window.dispatchEvent(new CustomEvent('bonfire:push:changed'));
   },
 
   urlBase64ToUint8Array(base64String) {
