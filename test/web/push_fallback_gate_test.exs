@@ -60,7 +60,7 @@ defmodule Bonfire.Notify.PushFallbackGateTest do
       {:ok, view: view, feed_id: feed_id}
     end
 
-    # what the notification hook sends once it has read the browser's subscription. `notifications-1` is the instance the layout renders: the one in `PersistentLive` is a sticky child LiveView, which a test does not render.
+    # what the notification hook sends once it has read the browser's subscription, and what the whole gate turns on. A page carries two of these components and each decides for itself from its own hook, which is why what follows is scoped to one of them: the other lives in `PersistentLive`, a sticky child LiveView, inside a portal, so its markup lands in this document while its component lives in another process, and a hook fired from here would reach neither.
     defp report(view, params) do
       view
       |> element("#notifications-1")
@@ -78,7 +78,10 @@ defmodule Bonfire.Notify.PushFallbackGateTest do
       # Proof it arrived, before anything is concluded from what the page shows: the same broadcast drives the OS notification the hook may fire, and a page that renders no toast because nothing reached it would otherwise look exactly like the gate working.
       assert_push_event(view, "notify:notifications-2", %{title: "Something happened"})
 
-      render(view)
+      # the instance whose push state the test set, rather than the whole page, which also carries the one in `PersistentLive` that no hook here can report to
+      view
+      |> element("#notifications-1")
+      |> render()
     end
 
     test "shows as a toast where push is not working on this device", %{
