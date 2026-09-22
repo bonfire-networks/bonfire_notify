@@ -78,9 +78,10 @@ defmodule Bonfire.Notify.FanOut do
   someone with none is none: that is the point at which "who to notify" becomes "what to send
   where", and it is the last thing the fan-out decides before writing `deliver` jobs.
 
-  One query per channel for the whole batch, and one preference read per recipient against settings
-  that are already loaded. Verb comes from the activity, so the answer is per activity rather than
-  per row.
+  One query per channel and distinct experience, and one preference read per recipient against
+  settings that are already loaded. Recipients are grouped by what the activity was for each of
+  them, which is usually one or two groups (the person named in a post, and everybody who got it
+  another way), so this stays a fixed small number of queries rather than one per recipient.
 
   Which channels exist is `Bonfire.Notify.Channel.configured/0` rather than a branch per channel
   here, so a channel an instance hasn't configured costs no query and adding one is a config entry.
@@ -90,21 +91,31 @@ defmodule Bonfire.Notify.FanOut do
   def targets([], _activity), do: []
 
   def targets(recipients, activity) do
-    # asked rather than called, since this extension doesn't depend on `bonfire_social`
-    verb =
-      Bonfire.Common.Utils.maybe_apply(Bonfire.Social.Activities, :verb_slug, [activity],
-        fallback_return: nil
-      )
+    # grouped because what an activity IS depends on who is being told: one post is a mention to the person it names and a plain write to everybody else, and both their switch and a Mastodon client's alert keys turn on that difference
+    by_experience =
+      Enum.group_by(recipients, fn {user, _feed} -> experienced_as(activity, user) end)
 
     Enum.flat_map(Bonfire.Notify.Channel.configured(), fn {channel, adapter} ->
-      # asked per channel, since a person can want mentions on their phone and not in a browser
-      wanted =
-        Enum.filter(recipients, fn {user, _feed} ->
-          Bonfire.Notify.Preferences.enabled?(user, verb, channel)
-        end)
+      Enum.flat_map(by_experience, fn {experience, group} ->
+        # asked per channel, since a person can want mentions on their phone and not in a browser
+        wanted =
+          Enum.filter(group, fn {user, _feed} ->
+            Bonfire.Notify.Preferences.enabled?(user, experience, channel)
+          end)
 
-      channel_targets(wanted, channel, adapter, verb)
+        channel_targets(wanted, channel, adapter, experience)
+      end)
     end)
+  end
+
+  # asked rather than called, since this extension doesn't depend on `bonfire_social`. Without it there is nothing to deliver anyway, and a nil reads as "nothing in particular", which the catch-all switch answers for
+  defp experienced_as(activity, user) do
+    Bonfire.Common.Utils.maybe_apply(
+      Bonfire.Social.Activities,
+      :experienced_as,
+      [activity, user],
+      fallback_return: nil
+    )
   end
 
   defp channel_targets([], _channel, _adapter, _verb), do: []

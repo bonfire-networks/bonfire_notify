@@ -20,14 +20,20 @@ defmodule Bonfire.Notify.RuntimeConfig do
 
     # Which coarse preference key a verb is filtered by, until preferences become per-verb. Keys are verbs, values are the setting under `[:push_notifications, …]`; a verb that names none is not filtered at all
     config :bonfire_notify, Bonfire.Notify.Preferences,
+      # keyed by what `Bonfire.Social.Activities.experienced_as/2` answers, which is finer than the old switches were: asking to follow and asking to quote both fall to the one "follows" key somebody may have set, and writing a post falls in with replies and mentions, so an old choice keeps being honoured rather than being half-read
       push_categories: %{
         like: :likes,
+        react: :likes,
         boost: :boosts,
         follow: :follows,
         request: :follows,
+        follow_request: :follows,
+        quote_request: :follows,
         message: :messages,
         create: :replies_and_mentions,
+        write: :replies_and_mentions,
         reply: :replies_and_mentions,
+        respond: :replies_and_mentions,
         mention: :replies_and_mentions
       }
 

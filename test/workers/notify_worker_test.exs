@@ -212,7 +212,7 @@ defmodule Bonfire.Notify.WorkerTest do
     end
   end
 
-  test "the query count stays the same as recipients are added", %{post: post} do
+  test "the query count does not grow with recipients", %{post: post} do
     one = [fake_user!() |> with_native_device()]
     three = Enum.map(1..3, fn _ -> fake_user!() |> with_native_device() end)
 
@@ -221,7 +221,30 @@ defmodule Bonfire.Notify.WorkerTest do
 
     assert length(deliver_jobs()) == 4, "all four recipients should have been delivered to"
 
-    assert queries_for_three == queries_for_one,
-           "deciding where to deliver must be per channel, not per recipient"
+    assert queries_for_three <= queries_for_one,
+           "deciding where to deliver must be per channel, not per recipient (#{queries_for_one} for one recipient, #{queries_for_three} for three)"
+  end
+
+  test "recipients the activity means different things to cost one lookup per kind, not per person",
+       %{alice: alice, post: post} do
+    plain = Enum.map(1..3, fn _ -> fake_user!() |> with_native_device() end)
+    named = fake_user!() |> with_native_device()
+
+    # the same activity is a mention to the person it names and a plain post to the others, so they are asked about separately: their switches differ, and so do the alert keys a Mastodon client subscribes to
+    {:ok, mentioning} =
+      Bonfire.Posts.publish(
+        current_user: alice,
+        post_attrs: %{post_content: %{html_body: "hey @#{named.character.username}"}},
+        boundary: "public"
+      )
+
+    {_, queries_one_kind} =
+      count_queries(fn -> Worker.perform(fan_out_job(post.id, plain)) end)
+
+    {_, queries_two_kinds} =
+      count_queries(fn -> Worker.perform(fan_out_job(mentioning.id, [named | plain])) end)
+
+    assert queries_two_kinds <= queries_one_kind + 2,
+           "two kinds of recipient may cost one target lookup per channel more, and nothing per person (#{queries_one_kind} for one kind, #{queries_two_kinds} for two)"
   end
 end

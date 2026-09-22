@@ -36,7 +36,7 @@ defmodule Bonfire.Notify.PreferencesTest do
   end
 
   test "a switch is per category and per channel", %{user: user} do
-    user = set(user, [:notifications, :web_push, :like], false)
+    user = set(user, [:notifications, :web_push, :react], false)
 
     refute Preferences.enabled?(user, :like, :web_push)
 
@@ -47,26 +47,31 @@ defmodule Bonfire.Notify.PreferencesTest do
            "and says nothing about other categories"
   end
 
-  test "the category is what the switch names, not the verb it covers", %{user: user} do
-    # the Mentions row is one switch over the `create` verb: a mention is stored as an ordinary post, and `mention` is separately a verb of its own
+  test "the switch turns on what the activity was for this person, not what was stored", %{
+    user: user
+  } do
     user = set(user, [:notifications, :web_push, :mention], false)
 
-    refute Preferences.enabled?(user, :create, :web_push),
-           "switching Mentions off has to reach the verb that category covers"
+    refute Preferences.enabled?(user, :mention, :web_push),
+           "switching Mentions off has to reach a post that names them"
 
     assert Preferences.enabled?(user, :reply, :web_push),
-           "a reply is its own verb and its own row, so Mentions says nothing about it"
+           "a reply is its own row, so Mentions says nothing about it"
+
+    # the same post, for somebody it does not name: stored identically, and not a mention to them
+    assert Preferences.enabled?(user, :write, :web_push),
+           "a post that merely reached them is not a mention of them"
   end
 
   test "it is the same key the notifications feed switch uses, on another channel", %{user: user} do
     # one row, two switches: what appears in the feed, and what is pushed
-    [_, _, category] = Notifications.show_in_centre_key(:like)
+    [_, _, category] = Notifications.show_in_centre_key(:react)
 
     user = set(user, [:notifications, :push, category], false)
 
     refute Preferences.enabled?(user, :like, :push)
 
-    assert Notifications.show_in_centre?(:like, current_user: user),
+    assert Notifications.show_in_centre?(:react, current_user: user),
            "switching the push off must not hide it from the feed as well"
   end
 
@@ -83,7 +88,7 @@ defmodule Bonfire.Notify.PreferencesTest do
     user =
       user
       |> set([:notifications, :web_push, :other], false)
-      |> set([:notifications, :web_push, :like], true)
+      |> set([:notifications, :web_push, :react], true)
 
     assert Preferences.enabled?(user, :like, :web_push)
     refute Preferences.enabled?(user, :some_verb_nobody_declared, :web_push)
@@ -105,7 +110,7 @@ defmodule Bonfire.Notify.PreferencesTest do
       user = set(user, [:push_notifications, :likes], false)
       refute Preferences.enabled?(user, :like, :web_push)
 
-      user = set(user, [:notifications, :web_push, :like], true)
+      user = set(user, [:notifications, :web_push, :react], true)
 
       assert Preferences.enabled?(user, :like, :web_push),
              "nothing is migrated, so the new choice has to win where both exist"

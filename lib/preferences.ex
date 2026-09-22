@@ -23,32 +23,32 @@ defmodule Bonfire.Notify.Preferences do
 
   A person who has never touched these switches still has their old coarse ones honoured: those hold one key per group of verbs (`[:push_notifications, :likes]` and friends), so they are read as a fallback rather than migrated, and a new choice takes precedence over the old one.
   """
-  def enabled?(user, verb, channel \\ :push) do
-    category_of(verb)
+  def enabled?(user, experience, channel \\ :push) do
+    category_of(experience)
     |> chosen(user, channel)
     |> case do
       nil ->
         case setting(user, [:notifications, channel, :other]) do
-          nil -> coarse_enabled?(user, verb, channel)
+          nil -> coarse_enabled?(user, experience, channel)
           catch_all -> catch_all != false
         end
 
       chosen ->
         chosen != false
     end
-    |> debug("deliver #{inspect(verb)} on #{inspect(channel)}?")
+    |> debug("deliver #{inspect(experience)} on #{inspect(channel)}?")
   end
 
-  # a verb no category covers has no switch of its own, and falls to the catch-all rather than inventing a key: the key space is categories, and a bare verb in it could collide with a category of the same name meaning something else (the `mention` category is the `create` verb, while `mention` is also a verb in its own right)
+  # something no category covers has no switch of its own, and falls to the catch-all rather than inventing a key: the key space is categories, and a bare verb in it could collide with a category of the same name meaning something else (the `mention` category selects the `create` verb, while `mention` is also a verb in its own right)
   defp chosen(nil, _user, _channel), do: nil
   defp chosen(category, user, channel), do: setting(user, [:notifications, channel, category])
 
   # asked rather than copied, since `bonfire_social` owns the categories a person is shown switches for. With no social there are no activities to deliver anyway
-  defp category_of(verb) do
+  defp category_of(experience) do
     maybe_apply(
       Bonfire.Social.Notifications,
-      :category_for_activity_type,
-      [verb],
+      :category_for,
+      [experience],
       fallback_return: nil
     )
   end
