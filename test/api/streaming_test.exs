@@ -234,6 +234,12 @@ defmodule Bonfire.Notify.Web.StreamingControllerTest do
 
       assert {:ok, _like} = Bonfire.Social.Likes.like(liker, post)
 
+      # a like is an edge, whose fan-out is queued, and live delivery (`Bonfire.Notify.Live`) is one of its channels: run the job as the queue would
+      for job <- Oban.Testing.all_enqueued(Bonfire.Common.Repo, worker: Bonfire.Notify.Worker),
+          job.args["op"] == "fan_out" do
+        Bonfire.Notify.Worker.perform(job)
+      end
+
       # Give the notification pipeline time to broadcast
       Process.sleep(500)
       chunks = stop_and_read_chunks(task)

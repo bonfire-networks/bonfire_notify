@@ -52,6 +52,22 @@ defmodule Bonfire.Notify.Channel do
   @callback deliver(target(), content(), keyword()) :: result()
 
   @doc """
+  Whether to deliver there and then rather than queue a job per target.
+
+  For a channel where late is worthless and there is nothing to retry, like showing a notification to whoever is connected (`Bonfire.Notify.Live`). Defaults to false.
+  """
+  @callback immediate?() :: boolean()
+
+  @optional_callbacks immediate?: 0
+
+  @doc "Whether this channel's adapter delivers immediately (`c:immediate?/0`), false for one that doesn't say."
+  def immediate?(adapter) when is_atom(adapter) do
+    function_exported?(adapter, :immediate?, 0) and adapter.immediate?() == true
+  end
+
+  def immediate?(_adapter), do: false
+
+  @doc """
   The channels this instance can actually send on, as `[{key, module}]` in declared order.
 
   Used by the fan-out to decide which targets exist, and by the preferences UI to decide which columns to show, so a channel is switched on in exactly one place.

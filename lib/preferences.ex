@@ -17,31 +17,41 @@ defmodule Bonfire.Notify.Preferences do
 
   Keyed by **notification category** and channel, `[:notifications, <channel>, <category>]`, with `:other` as the catch-all for a verb no category covers. Defaults to true, since these are opt-out.
 
+  The channel in the key is the switch a person sees, not the delivery channel asked about: every push channel (`:web_push`, `:native_push`) follows the one `:push` switch, as declared in this module's `channels` config.
+
   Categories rather than verbs because a category is what a person is shown and switches: the same key that decides whether a kind appears in their notifications feed (`[:notifications, :centre, <category>]`) decides whether it is pushed, so one row in the UI is one setting per channel.
 
   A category is not a verb and is not derivable from one: which grouping a notification belongs to can depend on the object as well (a direct message is a `create` of a `Message`, which is why `Bonfire.Notify.Content` overrides the verb by object type) and on the recipient's own relation to it (a mention is a tag pointing at *them*). So `Bonfire.Social.Notifications` is asked rather than copied here, since it owns both what each category covers and how exact that answer is, and this reads whatever it is told. Anything no category covers falls to the catch-all rather than getting a key of its own.
 
   A person who has never touched these switches still has their old coarse ones honoured: those hold one key per group of verbs (`[:push_notifications, :likes]` and friends), so they are read as a fallback rather than migrated, and a new choice takes precedence over the old one.
   """
-  def enabled?(user, experience, channel \\ :push) do
-    category_of(experience)
-    |> chosen(user, channel)
-    |> case do
-      nil ->
-        case setting(user, [:notifications, channel, :other]) do
-          nil -> coarse_enabled?(user, experience, channel)
-          catch_all -> catch_all != false
-        end
+  def enabled?(user, experience, delivery_channel \\ :push) do
+    # the switch a person sees, which one delivery channel shares with others: every push channel follows the one Push switch
+    case preference_channel(delivery_channel) do
+      :email -> emailed_as_it_happens?(user, experience)
+      channel -> wants?(user, experience, channel)
+    end
+  end
 
-      chosen ->
-        chosen != false
+  # email is per category, in three states: `true` sends as it happens ("Immediately"), `false` never ("Off"), and unset leaves it to the digest, so a new kind of notification never starts sending everybody one email each
+  defp emailed_as_it_happens?(user, experience),
+    do: switch(user, experience, :email) in [true, "true"]
+
+  defp wants?(user, experience, channel) do
+    case switch(user, experience, channel) do
+      nil -> coarse_enabled?(user, experience, channel)
+      chosen -> chosen != false
     end
     |> debug("deliver #{inspect(experience)} on #{inspect(channel)}?")
   end
 
-  # something no category covers has no switch of its own, and falls to the catch-all rather than inventing a key: the key space is categories, and a bare verb in it could collide with a category of the same name meaning something else (the `mention` category selects the `create` verb, while `mention` is also a verb in its own right)
-  defp chosen(nil, _user, _channel), do: nil
-  defp chosen(category, user, channel), do: setting(user, [:notifications, channel, category])
+  # the one switch that answers for this kind: its category's, or `:other`'s for a kind no category covers. Only then: `:other` is the switch for the rest, not a default for every category, so switching it off leaves an untouched category alone. And never a bare verb as a key, which could collide with a category of the same name meaning something else (the `mention` category selects the `create` verb, while `mention` is also a verb in its own right)
+  defp switch(user, experience, channel) do
+    case category_of(experience) do
+      nil -> setting(user, [:notifications, channel, :other])
+      category -> setting(user, [:notifications, channel, category])
+    end
+  end
 
   # asked rather than copied, since `bonfire_social` owns the categories a person is shown switches for. With no social there are no activities to deliver anyway
   defp category_of(experience) do
@@ -55,8 +65,17 @@ defmodule Bonfire.Notify.Preferences do
 
   defp setting(user, keys), do: Settings.get(keys, nil, context: user)
 
-  # the keys today's UI writes, one per group of verbs, and only for push: native follows it and email has none of its own yet
-  defp coarse_enabled?(user, verb, channel) when channel in [:push, :native_push, :web_push] do
+  # a delivery channel's switch, from config, else its own name
+  defp preference_channel(delivery_channel) do
+    Config.get([__MODULE__, :channels], %{},
+      name: l("Notification switch per delivery channel"),
+      description: l("Which switch each way of delivering a notification follows.")
+    )
+    |> Map.get(delivery_channel, delivery_channel)
+  end
+
+  # the keys the old UI wrote, one per group of verbs, and only for push: email has none of its own yet
+  defp coarse_enabled?(user, verb, :push) do
     case category(verb) do
       nil -> true
       category -> Settings.get([:push_notifications, category], true, context: user) != false

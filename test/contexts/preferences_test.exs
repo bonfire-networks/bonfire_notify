@@ -35,6 +35,8 @@ defmodule Bonfire.Notify.PreferencesTest do
            "a kind nobody has declared a preference for still arrives, since these are opt-out"
   end
 
+  @tag skip:
+         "one Push switch covers every push channel, a phone included; not on one device is that device's own switch (`policy: \"none\"`)"
   test "a switch is per category and per channel", %{user: user} do
     user = set(user, [:notifications, :web_push, :react], false)
 
@@ -47,10 +49,22 @@ defmodule Bonfire.Notify.PreferencesTest do
            "and says nothing about other categories"
   end
 
+  test "a switch is per category, and one Push switch covers every push channel", %{user: user} do
+    user = set(user, [:notifications, :push, :react], false)
+
+    refute Preferences.enabled?(user, :like, :web_push)
+
+    refute Preferences.enabled?(user, :like, :native_push),
+           "a phone follows the one Push switch as a browser does"
+
+    assert Preferences.enabled?(user, :create, :web_push),
+           "and says nothing about other categories"
+  end
+
   test "the switch turns on what the activity was for this person, not what was stored", %{
     user: user
   } do
-    user = set(user, [:notifications, :web_push, :mention], false)
+    user = set(user, [:notifications, :push, :mention], false)
 
     refute Preferences.enabled?(user, :mention, :web_push),
            "switching Mentions off has to reach a post that names them"
@@ -69,12 +83,15 @@ defmodule Bonfire.Notify.PreferencesTest do
 
     user = set(user, [:notifications, :push, category], false)
 
-    refute Preferences.enabled?(user, :like, :push)
+    refute Preferences.enabled?(user, :like, :web_push)
+    refute Preferences.enabled?(user, :like, :native_push)
 
     assert Notifications.show_in_centre?(:react, current_user: user),
            "switching the push off must not hide it from the feed as well"
   end
 
+  @tag skip:
+         "one Push switch covers every push channel, so the catch-all does too; see the test below"
   test "`:other` catches the kinds with no category of their own", %{user: user} do
     user = set(user, [:notifications, :web_push, :other], false)
 
@@ -84,11 +101,33 @@ defmodule Bonfire.Notify.PreferencesTest do
            "the catch-all is per channel too"
   end
 
+  test "`:other` catches the kinds with no category of their own, on every push channel", %{
+    user: user
+  } do
+    user = set(user, [:notifications, :push, :other], false)
+
+    refute Preferences.enabled?(user, :some_verb_nobody_declared, :web_push)
+    refute Preferences.enabled?(user, :some_verb_nobody_declared, :native_push)
+
+    assert Notifications.show_in_centre?(:other, current_user: user),
+           "switching Other's push off must not hide it from the feed as well"
+  end
+
+  test "`:other` is the switch for the rest, not a default for every category", %{user: user} do
+    user = set(user, [:notifications, :push, :other], false)
+
+    # the positive first: the switch did take, for what it covers
+    refute Preferences.enabled?(user, :some_verb_nobody_declared, :web_push)
+
+    assert Preferences.enabled?(user, :like, :web_push),
+           "switching Other off must not silence a category nobody touched"
+  end
+
   test "a switch of its own outranks the catch-all", %{user: user} do
     user =
       user
-      |> set([:notifications, :web_push, :other], false)
-      |> set([:notifications, :web_push, :react], true)
+      |> set([:notifications, :push, :other], false)
+      |> set([:notifications, :push, :react], true)
 
     assert Preferences.enabled?(user, :like, :web_push)
     refute Preferences.enabled?(user, :some_verb_nobody_declared, :web_push)
@@ -110,7 +149,7 @@ defmodule Bonfire.Notify.PreferencesTest do
       user = set(user, [:push_notifications, :likes], false)
       refute Preferences.enabled?(user, :like, :web_push)
 
-      user = set(user, [:notifications, :web_push, :react], true)
+      user = set(user, [:notifications, :push, :react], true)
 
       assert Preferences.enabled?(user, :like, :web_push),
              "nothing is migrated, so the new choice has to win where both exist"

@@ -6,7 +6,7 @@ defmodule Bonfire.Notify.Deliveries do
 
   What each job carries is the content rather than finished bytes, because the *shape* is not the same for everyone: a Mastodon client reads a different payload than our own service worker, and which one a target is is known at delivery. Encoding is cheap and happens there; the expensive part, loading and describing the activity, still happens once.
 
-  Deliveries are always queued, whether the fan-out itself ran inline or in a job, because sending is what fails: a push service can be slow, rate-limited or down, and each device needs its own retry rather than one failure taking the others down with it.
+  Deliveries are queued, whether the fan-out itself ran inline or in a job, because sending is what fails: a push service can be slow, rate-limited or down, and each device needs its own retry rather than one failure taking the others down with it. The exception is a channel that says it is immediate (`Bonfire.Notify.Channel.immediate?/1`), like showing a notification to whoever is connected, which is worth nothing late and has nothing to retry, so it is delivered here with the same assembled content.
   """
   use Bonfire.Common.Config
   use Bonfire.Common.Settings
@@ -32,6 +32,7 @@ defmodule Bonfire.Notify.Deliveries do
   def enqueue(targets, activity, recipients) do
     activity_id = Types.uid(activity)
     languages = Map.new(recipients, fn {user, _feed} -> {Types.uid(user), language_of(user)} end)
+    users = Map.new(recipients, fn {user, _feed} -> {Types.uid(user), user} end)
 
     jobs =
       targets
@@ -39,7 +40,12 @@ defmodule Bonfire.Notify.Deliveries do
       |> Enum.flat_map(fn {language, its_targets} ->
         %{content: content, opts: send_opts} = assembled_in(language, activity)
 
-        Enum.map(its_targets, &job(&1, activity_id, content, send_opts))
+        {now, queued} = Enum.split_with(its_targets, &immediate?/1)
+
+        # delivered here rather than queued (`Bonfire.Notify.Channel.immediate?/1`), with the recipient as loaded, which is where such a channel finds where to send
+        Enum.each(now, &deliver_now(&1, users[e(&1, :user_id, nil)], content, send_opts))
+
+        Enum.map(queued, &job(&1, activity_id, content, send_opts))
       end)
 
     jobs
@@ -52,6 +58,18 @@ defmodule Bonfire.Notify.Deliveries do
     exception ->
       # this runs inline for callers that can report, and a notification must never take the publish down with it: the activity is the record, so the error is returned for the caller to report rather than raised
       error(exception, "Could not enqueue notification deliveries")
+  end
+
+  defp immediate?(target) do
+    case Bonfire.Notify.Channel.adapter(e(target, :channel, nil)) do
+      {:ok, adapter} -> Bonfire.Notify.Channel.immediate?(adapter)
+      _ -> false
+    end
+  end
+
+  defp deliver_now(target, user, content, send_opts) do
+    {:ok, adapter} = Bonfire.Notify.Channel.adapter(e(target, :channel, nil))
+    adapter.deliver(Map.put(target, :user, user), content, send_opts)
   end
 
   defp job(target, activity_id, content, send_opts) do

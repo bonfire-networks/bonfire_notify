@@ -20,6 +20,8 @@ defmodule Bonfire.Notify.RuntimeConfig do
 
     # Which coarse preference key a verb is filtered by, until preferences become per-verb. Keys are verbs, values are the setting under `[:push_notifications, …]`; a verb that names none is not filtered at all
     config :bonfire_notify, Bonfire.Notify.Preferences,
+      # which switch each delivery channel (`Bonfire.Notify.Channel`'s keys) follows. A person sees one Push switch per kind of notification, for every device, and a device they don't want pushed to at all has its own switch (`policy: "none"`). A Mastodon client narrows further with its own alerts
+      channels: %{web_push: :push, native_push: :push, live: :push, email: :email},
       # keyed by what `Bonfire.Social.Activities.experienced_as/2` answers, which is finer than the old switches were: asking to follow and asking to quote both fall to the one "follows" key somebody may have set, and writing a post falls in with replies and mentions, so an old choice keeps being honoured rather than being half-read
       push_categories: %{
         like: :likes,
@@ -117,7 +119,11 @@ defmodule Bonfire.Notify.RuntimeConfig do
     config :bonfire_notify, Bonfire.Notify.Channel,
       channels: [
         web_push: Bonfire.Notify.WebPush,
-        native_push: Bonfire.Notify.NativePush
+        native_push: Bonfire.Notify.NativePush,
+        # whoever is connected right now (an open page, the native app's SSE stream), which is what push falls back to
+        live: Bonfire.Notify.Live,
+        # a person's confirmed account address, for someone who asked to be emailed as things happen
+        email: Bonfire.Notify.Email
       ],
       # how long to wait before retrying a delivery a push service rate-limited, since ExNudge doesn't surface the `Retry-After` header
       snooze_seconds: 60

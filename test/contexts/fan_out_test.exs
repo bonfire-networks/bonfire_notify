@@ -107,6 +107,36 @@ defmodule Bonfire.Notify.FanOutTest do
       assert deliver_jobs() == []
     end
 
+    test "a category switched off in the panel's Push column is pushed to no device", %{
+      alice: alice,
+      bob: bob
+    } do
+      configure_native_push()
+
+      {:ok, _} =
+        Bonfire.Notify.NativePush.register(bob, %{provider: "apns", token: "t-#{bob.id}"})
+
+      {:ok, bobs_post} =
+        Bonfire.Posts.publish(
+          current_user: bob,
+          post_attrs: %{post_content: %{html_body: "something for alice to like"}},
+          boundary: "public"
+        )
+
+      {:ok, like} = Bonfire.Social.Likes.like(alice, bobs_post)
+      like_activity = e(like, :activity, nil)
+      job = %{recipients: [%{"user_id" => bob.id}], feeds: []}
+
+      # the positive first: with nothing switched off, the like reaches bob's phone
+      assert {:ok, %{deliveries: 1}} = FanOut.notify(like_activity, job)
+
+      # the key the panel's Push switch writes for the Reactions row (`NotificationPreferencesLive.push_key/1`): one switch for every push channel, a phone included
+      Bonfire.Common.Settings.put([:notifications, :push, :react], false, current_user: bob)
+
+      assert {:ok, %{deliveries: 0}} = FanOut.notify(like_activity, job),
+             "switching Reactions off under Push has to stop them reaching a phone"
+    end
+
     test "queued, it hands the whole thing to the worker instead", %{bob: bob, activity: activity} do
       configure_native_push()
 
