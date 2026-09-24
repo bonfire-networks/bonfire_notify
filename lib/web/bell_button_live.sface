@@ -1,0 +1,20 @@
+{!-- the root is always there, as a stateful component's must be; only a signed-in person gets a bell inside it --}
+<div data-role="bell_button">
+  {#case if @enabled,
+      do: @label_enabled || l("Stop notifying me"),
+      else: @label || l("Notify me about new posts")}
+    {#match text}
+      <button
+        :if={current_user_id(@__context__)}
+        type="button"
+        phx-click="toggle"
+        phx-target={@myself}
+        aria-pressed={if @enabled, do: "true", else: "false"}
+        class={"btn btn-sm btn-circle", "btn-primary": @enabled, "btn-ghost": !@enabled}
+        title={text}
+      >
+        <#Icon iconify={if @enabled, do: "ph:bell-ringing-fill", else: "ph:bell"} class="w-4 h-4" />
+        <span class="sr-only">{text}</span>
+      </button>
+  {/case}
+</div>
