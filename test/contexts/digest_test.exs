@@ -9,6 +9,7 @@ defmodule Bonfire.Notify.DigestTest do
   use Bonfire.Notify.DataCase, async: false
 
   use Bonfire.Common.E
+  use Arrows
   import Swoosh.TestAssertions
 
   alias Bonfire.Notify.Digest
@@ -52,6 +53,15 @@ defmodule Bonfire.Notify.DigestTest do
       Bonfire.Common.Utils.current_user(
         Bonfire.Common.Settings.put(keys, value, current_user: user)
       )
+
+  # how often the digest comes is the account's choice, since the digest is one email per account. Returns the account as it now is, which is what a caller hands on
+  defp set_frequency(account, frequency),
+    do:
+      Bonfire.Common.Settings.put([:notifications, :email_digest], frequency,
+        current_account: account,
+        scope: :account
+      )
+      ~> Bonfire.Common.Utils.current_account()
 
   # back to no choice, as choosing Digest does (the throuple's middle segment deletes the setting: putting nil would keep the old value), then the person as a later read would find them, so a later `set/3` does not write the old value back
   defp unset(user, keys) do
@@ -150,9 +160,10 @@ defmodule Bonfire.Notify.DigestTest do
   describe "the schedule" do
     # a notification in a kind left to the digest queues the account's digest for when it is due, so only accounts with something waiting ever get one
 
-    # a digest is Never until chosen, so each of these starts from someone who asked for a daily one
-    setup %{bob: bob} do
-      {:ok, bob: set(bob, [:notifications, :email_digest], :daily)}
+    # a digest is Never until chosen, so each of these starts from an account that asked for a daily one
+    setup %{account: account} do
+      set_frequency(account, :daily)
+      :ok
     end
 
     test "nobody who has not chosen a frequency gets a digest queued", %{alice: alice} do
@@ -190,7 +201,7 @@ defmodule Bonfire.Notify.DigestTest do
     end
 
     test "a digest set to Never queues nothing", %{account: account, bob: bob, alice: alice} do
-      set(bob, [:notifications, :email_digest], :never)
+      set_frequency(account, :never)
       notified(alice, bob, "a post bob wrote")
 
       assert [] = waiting_digests(account)
@@ -229,6 +240,7 @@ defmodule Bonfire.Notify.DigestTest do
       # emailed as it happened, so it must not come again
       bob = set(bob, [:notifications, :email, :react], true)
       notified(alice, bob, "liked while instant")
+
       # the positive first: the switch did stop the digest being queued, and emailed it as it happened instead
       assert [] = waiting_digests(account)
       run_waiting_digests()
@@ -249,11 +261,11 @@ defmodule Bonfire.Notify.DigestTest do
       bob: bob,
       alice: alice
     } do
-      bob = set(bob, [:notifications, :email_digest], :never)
+      set_frequency(account, :never)
       notified(alice, bob, "liked while never")
       assert [] = waiting_digests(account)
 
-      set(bob, [:notifications, :email_digest], :daily)
+      set_frequency(account, :daily)
       notified(alice, bob, "liked once daily")
       run_waiting_digests()
 
@@ -274,8 +286,7 @@ defmodule Bonfire.Notify.DigestTest do
       bob = unset(bob, [:notifications, :email, :react])
       notified(alice, bob, "liked after the switch")
 
-      bob = set(bob, [:notifications, :email_digest], :weekly)
-      Digest.reschedule(bob)
+      Digest.reschedule(set_frequency(account, :weekly))
       assert [_] = waiting_digests(account)
 
       run_waiting_digests()
@@ -286,6 +297,25 @@ defmodule Bonfire.Notify.DigestTest do
       end)
     end
 
+    test "how often is the account's choice, even where a persona has an old choice of its own",
+         %{
+           account: account,
+           bob: bob,
+           alice: alice
+         } do
+      # a choice saved on the persona before the frequency was per account
+      set(bob, [:notifications, :email_digest], :daily)
+      set_frequency(account, :weekly)
+
+      notified(alice, bob, "a post bob wrote")
+
+      assert [job] = waiting_digests(account)
+      assert_about(job.scheduled_at, DateTime.add(DateTime.utc_now(), 7, :day))
+
+      run_waiting_digests()
+      assert_email_sent(fn email -> assert email.subject == "What happened this week" end)
+    end
+
     test "changing how often moves the waiting digest", %{
       account: account,
       bob: bob,
@@ -294,8 +324,7 @@ defmodule Bonfire.Notify.DigestTest do
       notified(alice, bob, "a post bob wrote")
       assert [_] = waiting_digests(account)
 
-      bob = set(bob, [:notifications, :email_digest], :weekly)
-      Digest.reschedule(bob)
+      Digest.reschedule(set_frequency(account, :weekly))
 
       assert [job] = waiting_digests(account)
       assert_about(job.scheduled_at, DateTime.add(DateTime.utc_now(), 7, :day))
@@ -309,15 +338,13 @@ defmodule Bonfire.Notify.DigestTest do
       notified(alice, bob, "a post bob wrote")
       assert [_] = waiting_digests(account)
 
-      bob = set(bob, [:notifications, :email_digest], :never)
-      Digest.reschedule(bob)
+      Digest.reschedule(set_frequency(account, :never))
 
       assert [] = waiting_digests(account)
     end
 
-    test "changing it with nothing waiting queues nothing", %{account: account, bob: bob} do
-      bob = set(bob, [:notifications, :email_digest], :weekly)
-      Digest.reschedule(bob)
+    test "changing it with nothing waiting queues nothing", %{account: account} do
+      Digest.reschedule(set_frequency(account, :weekly))
 
       assert [] = waiting_digests(account)
     end

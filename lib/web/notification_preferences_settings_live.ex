@@ -26,7 +26,7 @@ defmodule Bonfire.Notify.Settings.NotificationPreferencesLive do
       phx-click="Bonfire.Notify:send_test_digest"
       class="btn btn-sm btn-outline mt-4"
     >{l("Send me a test digest")}</button>
-    
+
     {#case maybe_component(
         Bonfire.UI.Social.NotificationPreferencesLive,
         @__context__

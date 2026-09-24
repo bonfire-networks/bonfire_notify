@@ -46,7 +46,12 @@ defmodule Bonfire.Notify.EmailContent do
     case Bonfire.Common.Utils.maybe_apply(
            Bonfire.Mailer.Render,
            :render_to_string,
-           [Bonfire.UI.Social.ActivityLive, "activity_live", "mjml", assigns(activity, nil, reader)],
+           [
+             Bonfire.UI.Social.ActivityLive,
+             "activity_live",
+             "mjml",
+             assigns(activity, nil, reader)
+           ],
            fallback_return: nil
          ) do
       nil -> nil

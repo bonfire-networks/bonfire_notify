@@ -36,7 +36,7 @@ defmodule Bonfire.Notify.LiveHandler do
   end
 
   @doc """
-  The "Email digest" dropdown: saves it as any setting is saved, then moves this account's waiting digest to its new due time, or cancels it for Never. Not at instance scope, where it sets the default for everyone rather than the admin's own schedule.
+  The "Email digest" dropdown: saves it as any setting is saved (on the account, since the digest is one email per account), then moves this account's waiting digest to its new due time, or cancels it for Never. Not at instance scope, where it sets the default for everyone rather than the admin's own schedule.
   """
   def handle_event("set_email_digest", params, socket) do
     case Bonfire.Common.Settings.LiveHandler.handle_event("set", params, socket) do
@@ -45,7 +45,7 @@ defmodule Bonfire.Notify.LiveHandler do
         scope = params["scope"] || e(assigns(socket), :scope, nil)
 
         if Bonfire.Common.Types.maybe_to_atom!(scope) != :instance,
-          do: Bonfire.Notify.Digest.reschedule(current_user(socket))
+          do: Bonfire.Notify.Digest.reschedule(current_account(socket))
 
         {:noreply, socket}
 

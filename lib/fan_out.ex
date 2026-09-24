@@ -117,7 +117,10 @@ defmodule Bonfire.Notify.FanOut do
       end
       |> Enum.uniq_by(fn {account_id, _user} -> account_id end)
       |> Enum.each(fn {account_id, user} ->
-        Bonfire.Notify.Digest.schedule(account_id, user, since)
+        Bonfire.Notify.Digest.schedule(
+          e(user, :accounted, :account, nil) || account_id,
+          since
+        )
       end)
     end
   end
