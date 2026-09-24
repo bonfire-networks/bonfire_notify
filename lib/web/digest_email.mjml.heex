@@ -1,0 +1,19 @@
+<mjml>
+  <mj-section>
+    <mj-column>
+      <mj-text>{@intro}</mj-text>
+    </mj-column>
+  </mj-section>
+  <%= for section <- @sections do %>
+    <mj-section>
+      <mj-column>
+        <mj-text font-size="18px" font-weight="bold">
+          {section.name} @{section.username}
+        </mj-text>
+      </mj-column>
+    </mj-section>
+    <%= for activity <- section.activities do %>
+      {raw(activity)}
+    <% end %>
+  <% end %>
+</mjml>

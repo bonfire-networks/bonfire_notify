@@ -33,9 +33,45 @@ defmodule Bonfire.Notify.Preferences do
     end
   end
 
+  @doc """
+  The notification categories this person leaves to the email digest: those with a row whose Email setting is unset (Digest), neither Instant (`true`, already emailed as it happened, including through the old email switch) nor Off (`false`).
+
+  As category keys, which is what the notifications feed's `notification_categories:` filter takes, so the digest selects exactly what the switches say.
+  """
+  def digest_categories(user) do
+    Bonfire.Common.Utils.maybe_apply(Bonfire.Social.Notifications, :categories_shown, [:row],
+      fallback_return: []
+    )
+    |> Enum.map(fn {key, _category} -> key end)
+    |> Enum.filter(fn key ->
+      is_nil(setting(user, [:notifications, :email, key])) and not old_email_switch?(user, key)
+    end)
+  end
+
   # email is per category, in three states: `true` sends as it happens ("Immediately"), `false` never ("Off"), and unset leaves it to the digest, so a new kind of notification never starts sending everybody one email each
-  defp emailed_as_it_happens?(user, experience),
-    do: switch(user, experience, :email) in [true, "true"]
+  defp emailed_as_it_happens?(user, experience) do
+    case switch(user, experience, :email) do
+      nil -> coarse_email?(user, experience)
+      chosen -> chosen in [true, "true"]
+    end
+  end
+
+  # the one email switch the old UI wrote (mentions and replies, sent as they happen), read as a fallback so nobody's choice is lost, for the categories it covered until a new choice is made for them. From config, like `push_categories`, and gone with the key it serves
+  defp coarse_email?(user, experience), do: old_email_switch?(user, category_of(experience))
+
+  defp old_email_switch?(user, category) do
+    case Map.get(email_categories(), category) do
+      nil -> false
+      keys -> Settings.get(keys, nil, context: user) in [true, "true"]
+    end
+  end
+
+  defp email_categories do
+    Config.get([__MODULE__, :email_categories], %{},
+      name: l("Old email preference keys"),
+      description: l("Which old email setting each kind of notification still honours.")
+    )
+  end
 
   defp wants?(user, experience, channel) do
     case switch(user, experience, channel) do

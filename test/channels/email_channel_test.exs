@@ -91,6 +91,9 @@ defmodule Bonfire.Notify.EmailChannelTest do
       # the activity as the feed shows it, through its email template: MJML renders a whole HTML document
       assert email.html_body =~ "<!doctype html>"
       assert email.html_body =~ "something worth liking"
+
+      # the activity's subject (who did what) carries when it happened, from its email template, which is what tells activities apart by day in a digest. The like was made just now
+      assert email.html_body =~ Bonfire.Common.DatesTimes.format_date(Date.utc_today())
     end)
   end
 

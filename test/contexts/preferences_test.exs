@@ -155,6 +155,26 @@ defmodule Bonfire.Notify.PreferencesTest do
              "nothing is migrated, so the new choice has to win where both exist"
     end
 
+    test "the old email switch still sends mentions and replies as they happen", %{user: user} do
+      user = set(user, [:email_notifications, :reply_or_mentions], true)
+
+      assert Preferences.enabled?(user, :mention, :email)
+      assert Preferences.enabled?(user, :reply, :email)
+
+      refute Preferences.enabled?(user, :like, :email),
+             "it only ever covered mentions and replies"
+    end
+
+    test "a new email choice outranks the old switch", %{user: user} do
+      user =
+        user
+        |> set([:email_notifications, :reply_or_mentions], true)
+        |> set([:notifications, :email, :mention], false)
+
+      refute Preferences.enabled?(user, :mention, :email)
+      assert Preferences.enabled?(user, :reply, :email)
+    end
+
     test "a verb no coarse key covers is unaffected by them", %{user: user} do
       user = set(user, [:push_notifications, :likes], false)
 

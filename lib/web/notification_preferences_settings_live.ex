@@ -18,6 +18,15 @@ defmodule Bonfire.Notify.Settings.NotificationPreferencesLive do
 
   def render(assigns) do
     ~F"""
+    {!-- for instance admins: their own digest, now, to check how it looks without waiting for the schedule --}
+    <button
+      :if={Bonfire.Me.Accounts.is_admin?(current_account(@__context__))}
+      id="send_test_digest"
+      type="button"
+      phx-click="Bonfire.Notify:send_test_digest"
+      class="btn btn-sm btn-outline mt-4"
+    >{l("Send me a test digest")}</button>
+    
     {#case maybe_component(
         Bonfire.UI.Social.NotificationPreferencesLive,
         @__context__

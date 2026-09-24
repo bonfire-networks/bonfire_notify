@@ -1,0 +1,4 @@
+<%= @intro %>
+<%= for section <- @sections do %>
+<%= section.name %> @<%= section.username %>: <%= lp("%{count} notification", "%{count} notifications", section.count, count: section.count) %>
+<% end %>

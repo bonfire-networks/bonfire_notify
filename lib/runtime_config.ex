@@ -22,6 +22,11 @@ defmodule Bonfire.Notify.RuntimeConfig do
     config :bonfire_notify, Bonfire.Notify.Preferences,
       # which switch each delivery channel (`Bonfire.Notify.Channel`'s keys) follows. A person sees one Push switch per kind of notification, for every device, and a device they don't want pushed to at all has its own switch (`policy: "none"`). A Mastodon client narrows further with its own alerts
       channels: %{web_push: :push, native_push: :push, live: :push, email: :email},
+      # the old UI's one email switch, by the category it covered, read until a new email choice is made for that category
+      email_categories: %{
+        mention: [:email_notifications, :reply_or_mentions],
+        extra_replies: [:email_notifications, :reply_or_mentions]
+      },
       # keyed by what `Bonfire.Social.Activities.experienced_as/2` answers, which is finer than the old switches were: asking to follow and asking to quote both fall to the one "follows" key somebody may have set, and writing a post falls in with replies and mentions, so an old choice keeps being honoured rather than being half-read
       push_categories: %{
         like: :likes,

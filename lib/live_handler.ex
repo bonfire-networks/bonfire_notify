@@ -8,6 +8,32 @@ defmodule Bonfire.Notify.LiveHandler do
   use Bonfire.UI.Common.Web, :live_handler
   import Untangle
 
+  @doc """
+  "Send me a test digest", for instance admins: their own digest, now, covering the last 30 days so there is plenty to look at. It does not touch the schedule. Checked here as well as by the button being shown only to admins, since an event can be sent without its button.
+  """
+  def handle_event("send_test_digest", _params, socket) do
+    account = current_account(socket)
+
+    if Bonfire.Me.Accounts.is_admin?(account) do
+      case Bonfire.Notify.Digest.send_now(account,
+             since: DateTime.add(DateTime.utc_now(), -30, :day)
+           ) do
+        {:ok, :nothing} ->
+          {:noreply,
+           assign_flash(socket, :info, l("Nothing from the last 30 days to put in a digest"))}
+
+        {:ok, _email} ->
+          {:noreply, assign_flash(socket, :info, l("Test digest sent to your email"))}
+
+        other ->
+          error(other, "Could not send a test digest")
+          {:noreply, assign_error(socket, l("Could not send the test digest"))}
+      end
+    else
+      {:noreply, assign_error(socket, l("Only instance admins can send a test digest"))}
+    end
+  end
+
   def handle_event("broadcast_open", %{"id" => object_id}, socket) do
     _current_user = current_user_required!(socket)
 

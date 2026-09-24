@@ -12,11 +12,12 @@ defmodule Bonfire.Notify.EmailContent do
     # `ed` rather than `e`: a delivery job's arguments are JSON, so their keys come back as strings
     title = ed(content, :title, nil) || Bonfire.Mailer.app_name()
     url = ed(content, :url, nil) |> absolute_url()
-
-    email = Bonfire.Mailer.new() |> Bonfire.Mailer.subject(title)
+    activity_id = ed(content, :activity_id, nil)
 
     in_locale(ed(content, :locale, nil), fn ->
-      with activity when not is_nil(activity) <- activity(ed(content, :activity_id, nil), reader),
+      email = Bonfire.Mailer.new() |> Bonfire.Mailer.subject(title)
+
+      with activity when not is_nil(activity) <- activity(activity_id, reader),
            %Swoosh.Email{html_body: html} = rendered when is_binary(html) and html != "" <-
              Bonfire.Common.Utils.maybe_apply(
                Bonfire.Mailer.Render,
@@ -36,25 +37,49 @@ defmodule Bonfire.Notify.EmailContent do
     end)
   end
 
+  @doc """
+  One activity as MJML for this reader, through `ActivityLive`'s email template, without a layout and not yet HTML, so several can go in one email (the digest). The same rendering an instant email uses. `nil` when the UI extension that owns the template is not there.
+  """
+  def activity_mjml(activity, reader) do
+    activity = preloaded(activity, reader)
+
+    case Bonfire.Common.Utils.maybe_apply(
+           Bonfire.Mailer.Render,
+           :render_to_string,
+           [Bonfire.UI.Social.ActivityLive, "activity_live", "mjml", assigns(activity, nil, reader)],
+           fallback_return: nil
+         ) do
+      nil -> nil
+      "" -> nil
+      rendered -> rendered |> Phoenix.HTML.Safe.to_iodata() |> IO.iodata_to_binary()
+    end
+  end
+
   # loaded as a feed row is, for the person reading, since that is what the template renders from
   defp activity(nil, _reader), do: nil
 
   defp activity(activity_id, reader) do
-    opts = [current_user: reader, skip_boundary_check: true]
-
     with {:ok, activity} <-
-           Bonfire.Common.Utils.maybe_apply(Bonfire.Social.Activities, :get, [activity_id, opts],
+           Bonfire.Common.Utils.maybe_apply(
+             Bonfire.Social.Activities,
+             :get,
+             [activity_id, [current_user: reader, skip_boundary_check: true]],
              fallback_return: nil
            ) do
-      Bonfire.Common.Utils.maybe_apply(
-        Bonfire.Social.Activities,
-        :activity_preloads,
-        [activity, feed_preloads(), opts],
-        fallback_return: activity
-      )
+      preloaded(activity, reader)
     else
       _ -> nil
     end
+  end
+
+  # what is already loaded (a feed row the digest has in hand) is left as it is
+  defp preloaded(activity, reader) do
+    Bonfire.Common.Utils.maybe_apply(
+      Bonfire.Social.Activities,
+      :activity_preloads,
+      [activity, feed_preloads(), [current_user: reader, skip_boundary_check: true]],
+      fallback_return: activity
+    )
   end
 
   # what a feed row renders from: `:feed` is what loads the object's own content (a post's text), which the other two leave out
