@@ -28,8 +28,23 @@ defmodule Bonfire.Notify.Preferences do
   def enabled?(user, experience, delivery_channel \\ :push) do
     # the switch a person sees, which one delivery channel shares with others: every push channel follows the one Push switch
     case preference_channel(delivery_channel) do
-      :email -> emailed_as_it_happens?(user, experience)
+      :email -> email_timing(user, experience) == :instant
       channel -> wants?(user, experience, channel)
+    end
+  end
+
+  @doc """
+  When this person is emailed about this kind of notification: `:instant` (as it happens), `:digest` (the default, left unset) or `:off`.
+
+  One read of the category's Email setting, so fan-out learns both whether to email now and whether to queue the digest from it.
+  """
+  def email_timing(user, experience) do
+    case switch(user, experience, :email) do
+      chosen when chosen in [true, "true"] -> :instant
+      chosen when chosen in [false, "false"] -> :off
+      nil -> if coarse_email?(user, experience), do: :instant, else: :digest
+      # a blank a Digest click once stored
+      _ -> :digest
     end
   end
 
@@ -46,14 +61,6 @@ defmodule Bonfire.Notify.Preferences do
     |> Enum.filter(fn key ->
       is_nil(setting(user, [:notifications, :email, key])) and not old_email_switch?(user, key)
     end)
-  end
-
-  # email is per category, in three states: `true` sends as it happens ("Immediately"), `false` never ("Off"), and unset leaves it to the digest, so a new kind of notification never starts sending everybody one email each
-  defp emailed_as_it_happens?(user, experience) do
-    case switch(user, experience, :email) do
-      nil -> coarse_email?(user, experience)
-      chosen -> chosen in [true, "true"]
-    end
   end
 
   # the one email switch the old UI wrote (mentions and replies, sent as they happen), read as a fallback so nobody's choice is lost, for the categories it covered until a new choice is made for them. From config, like `push_categories`, and gone with the key it serves

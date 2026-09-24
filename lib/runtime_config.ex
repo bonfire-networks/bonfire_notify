@@ -18,6 +18,14 @@ defmodule Bonfire.Notify.RuntimeConfig do
     #   modularity: :disabled
     config :bonfire_notify, modularity: nil
 
+    # how often the email digest goes out for anyone who has not chosen, `never` unless the env says otherwise, so nobody gets email they did not ask for. An admin can change it with the "Email digest" dropdown in instance settings
+    config :bonfire, :notifications,
+      email_digest:
+        (case System.get_env("EMAIL_DIGEST_DEFAULT", "never") do
+           frequency when frequency in ~w(daily weekly monthly) -> String.to_atom(frequency)
+           _ -> :never
+         end)
+
     # Which coarse preference key a verb is filtered by, until preferences become per-verb. Keys are verbs, values are the setting under `[:push_notifications, …]`; a verb that names none is not filtered at all
     config :bonfire_notify, Bonfire.Notify.Preferences,
       # which switch each delivery channel (`Bonfire.Notify.Channel`'s keys) follows. A person sees one Push switch per kind of notification, for every device, and a device they don't want pushed to at all has its own switch (`policy: "none"`). A Mastodon client narrows further with its own alerts

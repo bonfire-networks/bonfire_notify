@@ -49,8 +49,11 @@ defmodule Bonfire.Notify.FanOut do
         )
         |> still_to_notify(activity)
 
-      recipients
-      |> targets(activity)
+      by_experience = by_experience(recipients, activity)
+      queue_digests(by_experience, activity)
+
+      by_experience
+      |> targets_by_experience()
       |> Bonfire.Notify.Deliveries.enqueue(activity, recipients)
     end
   end
@@ -91,10 +94,35 @@ defmodule Bonfire.Notify.FanOut do
   def targets([], _activity), do: []
 
   def targets(recipients, activity) do
-    # grouped because what an activity IS depends on who is being told: one post is a mention to the person it names and a plain write to everybody else, and both their switch and a Mastodon client's alert keys turn on that difference
-    by_experience =
-      Enum.group_by(recipients, fn {user, _feed} -> experienced_as(activity, user) end)
+    recipients
+    |> by_experience(activity)
+    |> targets_by_experience()
+  end
 
+  # grouped because what an activity IS depends on who is being told: one post is a mention to the person it names and a plain write to everybody else, and both their switch and a Mastodon client's alert keys turn on that difference
+  defp by_experience(recipients, activity),
+    do: Enum.group_by(recipients, fn {user, _feed} -> experienced_as(activity, user) end)
+
+  # the account of everyone who left this kind to the email digest gets its digest queued, once per account however many of its personas this reached, covering from this notification. Only where email is sent at all
+  defp queue_digests(by_experience, activity) do
+    since = Bonfire.Common.DatesTimes.date_from_pointer(activity) || DateTime.utc_now()
+
+    if Keyword.has_key?(Bonfire.Notify.Channel.configured(), :email) do
+      for {experience, group} <- by_experience,
+          {user, _feed} <- group,
+          Bonfire.Notify.Preferences.email_timing(user, experience) == :digest,
+          account_id = account_id(user),
+          not is_nil(account_id) do
+        {account_id, user}
+      end
+      |> Enum.uniq_by(fn {account_id, _user} -> account_id end)
+      |> Enum.each(fn {account_id, user} ->
+        Bonfire.Notify.Digest.schedule(account_id, user, since)
+      end)
+    end
+  end
+
+  defp targets_by_experience(by_experience) do
     Enum.flat_map(Bonfire.Notify.Channel.configured(), fn {channel, adapter} ->
       Enum.flat_map(by_experience, fn {experience, group} ->
         # asked per channel, since a person can want mentions on their phone and not in a browser

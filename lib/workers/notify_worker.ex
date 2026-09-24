@@ -7,6 +7,8 @@ defmodule Bonfire.Notify.Worker do
     * `fan_out` — works out who is still worth notifying and on what, assembles what the notification says once per language they read, and inserts one `deliver` job per device. Runs `Bonfire.Notify.FanOut.notify/3`, the same function a caller can run inline, so using the queue changes when the work happens and nothing about what it does.
     * `deliver` — puts one finished payload on one target's wire and turns the answer into what this job should do next.
 
+  And `digest`, one account's email digest, queued by the fan-out for when it is due (`Bonfire.Notify.Digest.schedule/2`).
+
   Enqueued either by `Bonfire.Social.FeedActivities.maybe_enqueue_notify/2` inside the same transaction as the FeedPublish rows, so a publish that rolls back takes its notifications with it, or by a caller that ran the fan-out inline and only needs the deliveries queued.
   """
   @queue_atom :notify
@@ -74,6 +76,33 @@ defmodule Bonfire.Notify.Worker do
     :skip
   end
 
+  @doc """
+  Queues an account's email digest for `at`, covering from `since` (when the notification that queued it arrived), unless one is already waiting or running for it, so every notification before then adds nothing and the first one's `since` is kept.
+  """
+  def enqueue_digest(account_id, %DateTime{} = at, %DateTime{} = since)
+      when is_binary(account_id) do
+    %{op: "digest", account_id: account_id, since: DateTime.to_iso8601(since)}
+    |> new(
+      scheduled_at: at,
+      unique: [
+        period: :infinity,
+        keys: [:op, :account_id],
+        states: [:scheduled, :available, :executing, :retryable]
+      ]
+    )
+    |> Bonfire.Common.TestInstanceRepo.oban_insert()
+  end
+
+  @doc "The digest jobs waiting for this account, for cancelling them when its schedule changes."
+  def waiting_digests(account_id) when is_binary(account_id) do
+    from(job in Oban.Job,
+      where:
+        job.worker == ^inspect(__MODULE__) and job.state in ["scheduled", "available"] and
+          fragment("?->>'op' = 'digest'", job.args) and
+          fragment("?->>'account_id' = ?", job.args, ^account_id)
+    )
+  end
+
   @impl Oban.Worker
   def perform(%Oban.Job{args: %{"op" => "fan_out", "activity_id" => activity_id} = args}) do
     case existing_activity(activity_id) do
@@ -132,6 +161,21 @@ defmodule Bonfire.Notify.Worker do
   end
 
   @impl Oban.Worker
+  def perform(%Oban.Job{args: %{"op" => "digest", "account_id" => account_id} = args}) do
+    case repo().get(Bonfire.Data.Identity.Account, account_id) do
+      nil ->
+        debug(account_id, "the account is gone, so there is no digest to send")
+        {:cancel, :gone}
+
+      account ->
+        case Bonfire.Notify.Digest.send_due(account, digest_since(args)) do
+          {:ok, _} -> :ok
+          other -> other
+        end
+    end
+  end
+
+  @impl Oban.Worker
   def perform(%Oban.Job{args: args}) do
     error(args, "Unknown notify op")
     {:cancel, :unknown_op}
@@ -167,6 +211,16 @@ defmodule Bonfire.Notify.Worker do
           "How long a delivery has to have waited before it checks that what it is about still exists."
         )
     )
+  end
+
+  @doc "When the notification that queued a waiting digest arrived, from the job's args, or nil."
+  def digest_since(args) do
+    with since when is_binary(since) <- e(args, "since", nil),
+         {:ok, at, _offset} <- DateTime.from_iso8601(since) do
+      at
+    else
+      _ -> nil
+    end
   end
 
   # what the fan-out worked out for this verb, as the transport's own options

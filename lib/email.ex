@@ -2,7 +2,7 @@ defmodule Bonfire.Notify.Email do
   @moduledoc """
   Email as a delivery channel, for someone who asked to be emailed as things happen.
 
-  Everyone else is emailed by the digest: `Bonfire.Notify.Preferences` lets this channel through only for a person whose `email_frequency` is `:immediate`, which is not the default. Within that, the per-category email switch decides, as the Push switch does for push.
+  `Bonfire.Notify.Preferences` lets this channel through only for a category whose Email setting is Instant, which is not the default. Unset leaves it to the digest (`Bonfire.Notify.Digest`), and Off to nothing.
 
   A target is a person's account address, and only a confirmed one: an address nobody confirmed may not be theirs. Personas sharing an account share its address, and each gets its own email, since each is its own recipient with its own switches.
 

@@ -37,7 +37,7 @@ defmodule Bonfire.Notify.Settings.NotificationPreferencesLive do
           id="notification-push-devices"
         />
       {#match component}
-        <StatelessComponent module={component} />
+        <StatelessComponent module={component} scope={@scope} />
     {/case}
     """
   end

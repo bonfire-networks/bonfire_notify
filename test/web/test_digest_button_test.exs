@@ -30,7 +30,8 @@ defmodule Bonfire.Notify.TestDigestButtonTest do
     |> click_button("#send_test_digest", "Send me a test digest")
     |> assert_has("[role=alert]", text: "Test digest sent")
 
-    assert_email_sent(fn email -> assert email.subject =~ "new notification" end)
+    # it covers 30 days, so it says so, whatever the admin's own digest frequency
+    assert_email_sent(fn email -> assert email.subject == "What happened this month" end)
   end
 
   test "anyone else does not see it" do

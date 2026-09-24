@@ -16,7 +16,8 @@ defmodule Bonfire.Notify.LiveHandler do
 
     if Bonfire.Me.Accounts.is_admin?(account) do
       case Bonfire.Notify.Digest.send_now(account,
-             since: DateTime.add(DateTime.utc_now(), -30, :day)
+             since: DateTime.add(DateTime.utc_now(), -30, :day),
+             range: :monthly
            ) do
         {:ok, :nothing} ->
           {:noreply,
@@ -31,6 +32,25 @@ defmodule Bonfire.Notify.LiveHandler do
       end
     else
       {:noreply, assign_error(socket, l("Only instance admins can send a test digest"))}
+    end
+  end
+
+  @doc """
+  The "Email digest" dropdown: saves it as any setting is saved, then moves this account's waiting digest to its new due time, or cancels it for Never. Not at instance scope, where it sets the default for everyone rather than the admin's own schedule.
+  """
+  def handle_event("set_email_digest", params, socket) do
+    case Bonfire.Common.Settings.LiveHandler.handle_event("set", params, socket) do
+      {:noreply, socket} ->
+        # read as the settings handler reads it
+        scope = params["scope"] || e(assigns(socket), :scope, nil)
+
+        if Bonfire.Common.Types.maybe_to_atom!(scope) != :instance,
+          do: Bonfire.Notify.Digest.reschedule(current_user(socket))
+
+        {:noreply, socket}
+
+      other ->
+        other
     end
   end
 
