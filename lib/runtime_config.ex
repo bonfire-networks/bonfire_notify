@@ -132,8 +132,8 @@ defmodule Bonfire.Notify.RuntimeConfig do
     config :bonfire, Oban,
       queues: [notify: String.to_integer(System.get_env("QUEUE_SIZE_NOTIFY", "2"))]
 
-    # How many times a delivery job is worth retrying. Read at compile time, since that is when Oban takes a worker's defaults
-    config :bonfire_notify, Bonfire.Notify.Worker, max_attempts: 5
+    # NOTE How many times a delivery job is worth retrying is read at compile time (`Application.compile_env` in `Bonfire.Notify.Worker`, whose default is the same 5), since that is when Oban takes a worker's defaults, so it cannot be set here: this runs at boot, after the release was compiled without it, and a release refuses to boot when a compile-time value differs at runtime ("aborting boot" in `Config.Provider`). To change it, set it in compile-time config (`config/bonfire_notify.exs`) and rebuild.
+    # config :bonfire_notify, Bonfire.Notify.Worker, max_attempts: 5
 
     config :ex_nudge,
       vapid_public_key: System.get_env("WEB_PUSH_PUBLIC_KEY"),
