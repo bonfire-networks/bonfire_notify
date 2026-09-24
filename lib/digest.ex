@@ -25,7 +25,7 @@ defmodule Bonfire.Notify.Digest do
   @doc """
   Sends this account its digest now, to its address. `{:ok, email}` once sent, `{:ok, :nothing}` when nothing is waiting, or an error.
 
-  Options: `since:` how far back to look (default a first digest's look-back), and `range:` (`:daily`, `:weekly` or `:monthly`) for what the subject says it covers (default the person's own digest frequency).
+  Options: `since:` how far back to look (default a first digest's look-back), and `range:` (`:daily`, `:weekly` or `:monthly`) for what the subject says it covers (default the account's digest frequency).
   """
   def send_now(account, opts \\ []) do
     account = Bonfire.Common.Repo.maybe_preload(account, :email)
@@ -41,7 +41,7 @@ defmodule Bonfire.Notify.Digest do
         accounted: [account: [:settings]]
       ])
 
-    # one email reads in one language: the first persona's, the one whose frequency the subject reads
+    # one email reads in one language: the first persona's (how often it comes is the account's own setting)
     first = List.first(personas)
 
     Deliveries.in_locale(Deliveries.language_of(first), fn ->
@@ -50,7 +50,7 @@ defmodule Bonfire.Notify.Digest do
           {:ok, :nothing}
 
         sections ->
-          title = subject(opts[:range] || frequency(first))
+          title = subject(opts[:range] || frequency(account(account)))
 
           # what the title does not say: from when (the instance is named in the header)
           intro = l("Since %{date}", date: DatesTimes.format_date(since))
@@ -90,17 +90,21 @@ defmodule Bonfire.Notify.Digest do
   end
 
   @doc """
-  Queues this account's digest for when it is next due, on this persona's frequency: an interval after the last one, or an interval from now for a first. It covers from `since`, when the notification queuing it arrived. Nothing for Never, and nothing more while one is already waiting.
+  Queues this account's digest for when it is next due, on the account's frequency: an interval after the last one, or an interval from now for a first. It covers from `since`, when the notification queuing it arrived. Nothing for Never, and nothing more while one is already waiting.
+
+  Takes the account, or its id.
   """
-  def schedule(account_id, user, %DateTime{} = since) do
-    case frequency(user) do
+  def schedule(account, %DateTime{} = since) do
+    account = account(account)
+
+    case frequency(account) do
       :never ->
         :skip
 
       frequency ->
         Bonfire.Notify.Worker.enqueue_digest(
-          account_id,
-          DateTime.add(last_sent(user) || DateTime.utc_now(), interval_days(frequency), :day),
+          Bonfire.Common.Types.uid(account),
+          DateTime.add(last_sent(account) || DateTime.utc_now(), interval_days(frequency), :day),
           since
         )
     end
@@ -109,24 +113,26 @@ defmodule Bonfire.Notify.Digest do
   @doc """
   Moves this account's waiting digest to its new due time after its frequency changed, or cancels it for Never, keeping what it covers from. With none waiting there is nothing to move: the next notification queues one.
   """
-  def reschedule(user) do
-    account_id =
-      Bonfire.Common.Types.uid(e(user, :accounted, :account_id, nil) || e(user, :account, nil))
-
-    waiting = Bonfire.Notify.Worker.waiting_digests(account_id)
+  def reschedule(account) do
+    waiting = Bonfire.Notify.Worker.waiting_digests(Bonfire.Common.Types.uid(account))
 
     with %Oban.Job{args: args} <- Bonfire.Common.Repo.one(from(job in waiting, limit: 1)),
          {:ok, cancelled} when cancelled > 0 <-
            Oban.cancel_all_jobs(Bonfire.Common.TestInstanceRepo.oban_name(), waiting) do
-      schedule(
-        account_id,
-        user,
-        Bonfire.Notify.Worker.digest_since(args) || DateTime.utc_now()
-      )
+      schedule(account, Bonfire.Notify.Worker.digest_since(args) || DateTime.utc_now())
     else
       _ -> :skip
     end
   end
+
+  # with its settings, since its frequency is one of them
+  defp account(%Bonfire.Data.Identity.Account{} = account),
+    do: Bonfire.Common.Repo.maybe_preload(account, :settings)
+
+  defp account(account_id) when is_binary(account_id),
+    do: Bonfire.Common.Repo.get(Bonfire.Data.Identity.Account, account_id) |> account()
+
+  defp account(_), do: nil
 
   # asked rather than called, since this extension doesn't depend on `bonfire_social`, which owns Seen
   defp last_sent(account_or_user) do
@@ -203,9 +209,9 @@ defmodule Bonfire.Notify.Digest do
   defp subject(:monthly), do: l("What happened this month")
   defp subject(_daily), do: l("What happened today")
 
-  defp frequency(user) do
-    # the instance's default, when this person has not chosen, is in config (`Bonfire.Notify.RuntimeConfig`), so nothing unset reads as a frequency here
-    case Settings.get([:notifications, :email_digest], :never, context: user) do
+  # the account's own choice, else the instance's default (`Bonfire.Notify.RuntimeConfig`), and never a persona's: the digest is one email per account, so one persona's old choice must not decide for the others
+  defp frequency(account) do
+    case Settings.get([:notifications, :email_digest], :never, current_account: account) do
       frequency when frequency in [:daily, "daily"] -> :daily
       frequency when frequency in [:weekly, "weekly"] -> :weekly
       frequency when frequency in [:monthly, "monthly"] -> :monthly
