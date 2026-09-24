@@ -97,6 +97,106 @@ defmodule Bonfire.Notify.EmailChannelTest do
     end)
   end
 
+  test "an email shows only what an email can: the page's buttons and menus are left out of both parts",
+       %{alice: alice} do
+    {bob, post} = author()
+    set(bob, [:notifications, :email, :react], true)
+
+    like_and_deliver(alice, bob, post)
+
+    assert_email_sent(fn email ->
+      # a component with no email template (the post's actions) is dropped, not named: no module name reaches the reader
+      refute email.html_body =~ "Elixir."
+      refute email.text_body =~ "Elixir."
+
+      # and the row itself is there, with a whole address to it, since an email is read away from the instance (last, since `assert_email_sent/1` wants a truthy answer)
+      assert email.html_body =~ "something worth liking"
+      assert email.text_body =~ "something worth liking"
+      assert email.text_body =~ Bonfire.Common.URIs.base_url() <> "/post/" <> post.id
+    end)
+  end
+
+  test "under a like of your own post, no author line: it would only name you (or, wrongly, the liker)",
+       %{alice: alice} do
+    {bob, post} = author()
+    set(bob, [:notifications, :email, :react], true)
+
+    like_and_deliver(alice, bob, post)
+
+    assert_email_sent(fn email ->
+      for body <- [email.html_body, email.text_body] do
+        # an author line reads "name - @username"; the line saying who liked it names nobody by username
+        refute body =~ "@#{bob.character.username}"
+        refute body =~ "@#{alice.character.username}"
+      end
+
+      assert email.text_body =~ "something worth liking"
+    end)
+  end
+
+  test "who did it is shown with their avatar, at an address an inbox can load", %{alice: alice} do
+    {bob, post} = author()
+    set(bob, [:notifications, :email, :react], true)
+
+    like_and_deliver(alice, bob, post)
+
+    avatar =
+      alice
+      |> repo().preload(profile: :icon)
+      |> Bonfire.Common.Media.avatar_url()
+      |> Bonfire.UI.Common.SEOImage.absolute_url()
+
+    assert_email_sent(fn email ->
+      assert "http" <> _ = avatar
+      assert avatar in (email.html_body |> Floki.parse_document!() |> Floki.attribute("img", "src"))
+    end)
+  end
+
+  test "a post behind a content warning is emailed as its warning, not its text", %{alice: alice} do
+    {bob, _post} = author()
+    set(bob, [:notifications, :email, :react], true)
+
+    {:ok, warned} =
+      Bonfire.Posts.publish(
+        current_user: bob,
+        post_attrs: %{
+          sensitive: true,
+          post_content: %{summary: "a spoiler warning", html_body: "the secret ending"}
+        },
+        boundary: "public"
+      )
+
+    like_and_deliver(alice, bob, warned)
+
+    assert_email_sent(fn email ->
+      refute email.html_body =~ "the secret ending"
+      refute email.text_body =~ "the secret ending"
+      assert email.html_body =~ "a spoiler warning"
+      assert email.text_body =~ "a spoiler warning"
+    end)
+  end
+
+  test "a post marked sensitive without a warning of its own is still hidden, behind a generic one",
+       %{alice: alice} do
+    {bob, _post} = author()
+    set(bob, [:notifications, :email, :react], true)
+
+    {:ok, warned} =
+      Bonfire.Posts.publish(
+        current_user: bob,
+        post_attrs: %{sensitive: true, post_content: %{html_body: "the secret ending"}},
+        boundary: "public"
+      )
+
+    like_and_deliver(alice, bob, warned)
+
+    assert_email_sent(fn email ->
+      refute email.html_body =~ "the secret ending"
+      refute email.text_body =~ "the secret ending"
+      assert email.text_body =~ "Content warning"
+    end)
+  end
+
   test "with nothing chosen a category waits for the digest, so nothing is emailed right away",
        %{alice: alice} do
     {bob, post} = author()

@@ -88,23 +88,28 @@ defmodule Bonfire.Notify.Deliveries do
     })
   end
 
-  # read from settings the recipients were loaded with, so this costs no query
-  defp language_of(user),
+  @doc "The language this person reads, from the settings they were loaded with, so it costs no query. `nil` when they chose none."
+  def language_of(user),
     do: Settings.get([Bonfire.Common.Localise.Cldr, :default_locale], nil, context: user)
 
-  defp assembled_in(nil, activity), do: Content.for_delivery(activity)
+  @doc """
+  Runs `fun` in `locale`, then puts back the language the process had, since whatever runs next in it expects that one (this module goes on to assemble other languages). `nil` runs it as it is.
+  """
+  def in_locale(nil, fun), do: fun.()
 
-  defp assembled_in(language, activity) do
+  def in_locale(locale, fun) do
     previous = Bonfire.Common.Localise.get_locale()
-    Bonfire.Common.Localise.put_locale(language)
+    Bonfire.Common.Localise.put_locale(locale)
 
     try do
-      Content.for_delivery(activity)
+      fun.()
     after
-      # this goes on to assemble other languages, and whatever runs next in this process expects the language it had
       Bonfire.Common.Localise.put_locale(previous)
     end
   end
+
+  defp assembled_in(language, activity),
+    do: in_locale(language, fn -> Content.for_delivery(activity) end)
 
   defp batch_size do
     Config.get([__MODULE__, :batch_size], 500,

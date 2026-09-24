@@ -4,7 +4,7 @@ defmodule Bonfire.Notify.Digest do
 
   A kind's Email setting is Off (`false`), Digest (unset) or Instant (`true`, emailed as it happened by `Bonfire.Notify.Email`), so only the Digest ones go in (`Bonfire.Notify.Preferences.digest_categories/1`), selected by the same `notification_categories:` filter the chips and switches use. An account with nothing waiting gets no email.
 
-  Each notification renders as an instant email renders it (`Bonfire.Notify.EmailContent.activity_mjml/2`), inside `Bonfire.Notify.DigestEmail`: an intro, then a section per persona under a header naming them.
+  Each notification renders as an instant email renders it, in both parts (`Bonfire.Notify.EmailContent.activity_email/2`), inside `Bonfire.Notify.DigestEmail`: an intro, then a section per persona under a header naming them.
 
   `send_now/2` is what the admin's "Send me a test digest" button calls. The schedule sends through `send_due/1` instead, from a job the fan-out queues (`schedule/2`) when a notification left to the digest arrives, so only accounts with something waiting ever get one.
 
@@ -18,6 +18,7 @@ defmodule Bonfire.Notify.Digest do
   import Ecto.Query, only: [from: 2]
 
   alias Bonfire.Common.DatesTimes
+  alias Bonfire.Notify.Deliveries
   alias Bonfire.Notify.EmailContent
   alias Bonfire.Notify.Preferences
 
@@ -40,23 +41,35 @@ defmodule Bonfire.Notify.Digest do
         accounted: [account: [:settings]]
       ])
 
-    case personas |> Enum.map(&section(&1, since)) |> Enum.reject(&is_nil/1) do
-      [] ->
-        {:ok, :nothing}
+    # one email reads in one language: the first persona's, the one whose frequency the subject reads
+    first = List.first(personas)
 
-      sections ->
-        Bonfire.Mailer.new()
-        |> Bonfire.Mailer.subject(subject(opts[:range] || frequency(List.first(personas))))
-        |> Bonfire.Mailer.Render.templated(Bonfire.Notify.DigestEmail, %{
-          intro:
-            l("Here's what happened on %{instance} since %{date}",
-              instance: Bonfire.Mailer.app_name(),
-              date: DatesTimes.format_date(since)
-            ),
-          sections: sections
-        })
-        |> Bonfire.Mailer.send_now(e(account, :email, :email_address, nil))
-    end
+    Deliveries.in_locale(Deliveries.language_of(first), fn ->
+      case personas |> Enum.map(&section(&1, since)) |> Enum.reject(&is_nil/1) do
+        [] ->
+          {:ok, :nothing}
+
+        sections ->
+          title = subject(opts[:range] || frequency(first))
+
+          # what the title does not say: from when (the instance is named in the header)
+          intro = l("Since %{date}", date: DatesTimes.format_date(since))
+
+          Bonfire.Mailer.new()
+          |> Bonfire.Mailer.subject(title)
+          |> Bonfire.Mailer.Render.templated(Bonfire.Notify.DigestEmail, %{
+            title: title,
+            intro: intro,
+            # what an inbox shows next to the subject
+            preheader: intro,
+            sections: sections,
+            # where to read all of it, and where to change what the digest sends (or stop it)
+            notifications_url: Bonfire.Common.URIs.base_url() <> "/notifications",
+            settings_url: Bonfire.Common.URIs.base_url() <> "/settings/user/bonfire_notify"
+          })
+          |> Bonfire.Mailer.send_now(e(account, :email, :email_address, nil))
+      end
+    end)
   end
 
   @doc """
@@ -144,15 +157,17 @@ defmodule Bonfire.Notify.Digest do
   # one persona's part: what reached it since `since`, in the kinds it left to the digest, or nil when there is nothing
   defp section(user, since) do
     with [_ | _] = categories <- Preferences.digest_categories(user),
-         [_ | _] = activities <- pending(user, categories, since) do
+         [_ | _] = activities <- pending(user, categories, since),
+         # counted once rendered, so the count says what the email shows
+         [_ | _] = rows <-
+           activities
+           |> Enum.map(&EmailContent.activity_email(&1, user))
+           |> Enum.reject(&is_nil/1) do
       %{
         name: e(user, :profile, :name, nil),
         username: e(user, :character, :username, nil),
-        count: length(activities),
-        activities:
-          activities
-          |> Enum.map(&EmailContent.activity_mjml(&1, user))
-          |> Enum.reject(&is_nil/1)
+        count: length(rows),
+        rows: rows
       }
     else
       _ -> nil

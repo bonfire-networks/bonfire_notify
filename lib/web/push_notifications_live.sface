@@ -48,7 +48,7 @@
     <div>
       {!-- Enable/Disable toggle --}
       <div class={
-        "flex items-center justify-between p-3 rounded-xl border",
+        "notification-push-offer flex items-center justify-between gap-4 p-3 rounded-xl border",
         "border-primary/20 bg-primary/5": @current_device_subscribed,
         "border-secondary bg-base-200/30": !@current_device_subscribed
       }>
@@ -176,7 +176,7 @@
     --}
 
       {!-- Registered devices --}
-      <div :if={@subscriptions != []} class="mt-4">
+      <div :if={@subscriptions != []} class="notification-push-device-list mt-4">
         <p class="text-xs font-medium text-muted uppercase tracking-wider mb-2 px-1">{l("Devices")}</p>
         <div class="space-y-1.5">
           {#for sub <- @subscriptions}
@@ -184,7 +184,7 @@
             {#case {Bonfire.Notify.PushDevice.label(sub.push_device), is_current_device?(sub, @current_endpoint)}}
               {#match {label, is_current}}
                 <div class={
-                  "flex items-center justify-between p-2.5 rounded-xl transition-colors",
+                  "notification-push-device flex items-center justify-between gap-3 rounded-xl transition-colors",
                   "bg-primary/5 border border-primary/15": is_current,
                   "bg-base-200/30 border border-transparent hover:border-secondary": !is_current
                 }>

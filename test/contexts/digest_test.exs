@@ -37,6 +37,9 @@ defmodule Bonfire.Notify.DigestTest do
     like
   end
 
+  # the post a like from `liked/3` is about
+  defp liked_post_id(like), do: e(like, :edge, :object_id, nil)
+
   # signing up can send mail of its own (asking to confirm the address), which is not what these tests are about
   defp flush_sent_emails do
     receive do
@@ -75,11 +78,277 @@ defmodule Bonfire.Notify.DigestTest do
       # the range it covers, for a daily digest
       assert email.subject == "What happened today"
 
-      # an intro, a header naming the persona, then what happened (the HTML escapes the apostrophe, the text part does not)
-      assert email.html_body =~ "what happened on"
-      assert email.text_body =~ "Here's what happened"
+      # an intro saying from when (the first digest looks back a week), a header naming the persona, then what happened
+      since = "Since " <> Bonfire.Common.DatesTimes.format_date(Date.add(Date.utc_today(), -7))
+      assert email.html_body =~ since
+      assert email.text_body =~ since
       assert email.html_body =~ "@#{bob.character.username}"
+      # a component with no email template (the post's actions) is dropped, not named: no module name reaches the reader
+      refute email.html_body =~ "Elixir."
+
       assert email.html_body =~ "liked"
+    end)
+  end
+
+  test "each row carries its text and a whole link to it, in both parts", %{
+    account: account,
+    bob: bob,
+    alice: alice
+  } do
+    post_id = alice |> liked(bob, "a post bob wrote") |> liked_post_id()
+    # a whole address, since an email is read away from the instance
+    link = Bonfire.Common.URIs.base_url() <> "/post/" <> post_id
+
+    assert {:ok, _} = Digest.send_now(account)
+
+    assert_email_sent(fn email ->
+      assert email.text_body =~ "a post bob wrote"
+      assert email.text_body =~ link
+      assert email.html_body =~ "a post bob wrote"
+      assert email.html_body =~ ~s(href="#{link}")
+    end)
+  end
+
+  test "each notification is a block of its own, and each part of it a line of its own", %{
+    account: account,
+    bob: bob,
+    alice: alice
+  } do
+    liked(alice, bob, "the first post")
+    liked(alice, bob, "the second post")
+
+    assert {:ok, _} = Digest.send_now(account)
+
+    assert_email_sent(fn email ->
+      doc = Floki.parse_document!(email.html_body)
+
+      # the smallest element holding some text is the line it sits on
+      line_of = fn text ->
+        doc
+        |> Floki.find("div, p, td")
+        |> Enum.filter(&(Floki.text(&1) =~ text))
+        |> Enum.min_by(&String.length(Floki.text(&1)))
+        |> Floki.text()
+      end
+
+      # two notifications do not share a line, nor does a post share one with what was done to it
+      refute line_of.("the first post") =~ "the second post"
+      refute line_of.("the first post") =~ "liked your activity"
+      assert line_of.("the first post") =~ "the first post"
+    end)
+  end
+
+  test "each notification says what happened to the reader, as the notifications feed does",
+       %{account: account, bob: bob, alice: alice} do
+    post_id = alice |> liked(bob, "a post bob wrote") |> liked_post_id()
+
+    {:ok, _} =
+      Bonfire.Posts.publish(
+        current_user: alice,
+        post_attrs: %{post_content: %{html_body: "an answer"}, reply_to_id: post_id},
+        boundary: "public"
+      )
+
+    {:ok, _} = Bonfire.Social.Graph.Follows.follow(alice, bob)
+    flush_sent_emails()
+
+    assert {:ok, _} = Digest.send_now(account)
+
+    assert_email_sent(fn email ->
+      # in the text part too, what was done and who wrote it are lines of their own
+      replied_line =
+        email.text_body |> String.split("\n") |> Enum.find(&(&1 =~ "replied to you"))
+
+      refute replied_line =~ "@#{alice.character.username}"
+
+      for body <- [email.html_body, email.text_body] do
+        assert body =~ "replied to you"
+        assert body =~ "followed you"
+        assert body =~ "liked"
+        # the reply's author line names who wrote it, since that is not the reader
+        assert body =~ "@#{alice.character.username}"
+      end
+    end)
+  end
+
+  test "a request to join a group they run reads as one, not as a follow", %{
+    account: account,
+    bob: bob
+  } do
+    group = Bonfire.Classify.Simulate.fake_group!(bob, %{membership: "on_request"})
+    asker = Bonfire.Me.Fake.fake_user!("Only Joining")
+    {:ok, %{requested: true}} = Bonfire.Classify.Categories.join_group(asker, group)
+    flush_sent_emails()
+
+    assert {:ok, _} = Digest.send_now(account)
+
+    assert_email_sent(fn email ->
+      refute email.text_body =~ "requested to follow"
+      assert email.html_body =~ "requested to join"
+      assert email.text_body =~ "Only Joining requested to join"
+    end)
+  end
+
+  test "the email says where to read everything, and where to change what it sends", %{
+    account: account,
+    bob: bob,
+    alice: alice
+  } do
+    liked(alice, bob, "a post bob wrote")
+
+    assert {:ok, _} = Digest.send_now(account)
+
+    assert_email_sent(fn email ->
+      base = Bonfire.Common.URIs.base_url()
+
+      for body <- [email.html_body, email.text_body] do
+        assert body =~ base <> "/notifications"
+        assert body =~ base <> "/settings/user/bonfire_notify"
+      end
+    end)
+  end
+
+  test "the digest wears the instance's email theme, with a title saying what it covers", %{
+    account: account,
+    bob: bob,
+    alice: alice
+  } do
+    liked(alice, bob, "a post bob wrote")
+
+    assert {:ok, _} = Digest.send_now(account)
+
+    assert_email_sent(fn email ->
+      # the same theme the account emails use (`[:ui, :auth, :email_theme]`)
+      assert email.html_body =~ Bonfire.UI.Common.Email.Basic.theme()[:primary]
+      # the title is in the body, not only in the subject
+      assert email.html_body =~ email.subject
+      assert email.text_body =~ email.subject
+    end)
+  end
+
+  test "a long post comes as an excerpt, so one post cannot fill the email", %{
+    account: account,
+    bob: bob,
+    alice: alice
+  } do
+    liked(
+      alice,
+      bob,
+      "The opening sentence. " <>
+        String.duplicate("Some words that carry on. ", 40) <> "The closing sentence."
+    )
+
+    assert {:ok, _} = Digest.send_now(account)
+
+    assert_email_sent(fn email ->
+      refute email.html_body =~ "The closing sentence"
+      refute email.text_body =~ "The closing sentence"
+      assert email.html_body =~ "The opening sentence."
+      assert email.text_body =~ "The opening sentence."
+    end)
+  end
+
+  test "a post behind a content warning is in the digest as its warning, not its text", %{
+    account: account,
+    bob: bob,
+    alice: alice
+  } do
+    {:ok, warned} =
+      Bonfire.Posts.publish(
+        current_user: bob,
+        post_attrs: %{
+          sensitive: true,
+          post_content: %{summary: "a spoiler warning", html_body: "the secret ending"}
+        },
+        boundary: "public"
+      )
+
+    {:ok, _} = Bonfire.Social.Likes.like(alice, warned)
+    flush_sent_emails()
+
+    assert {:ok, _} = Digest.send_now(account)
+
+    assert_email_sent(fn email ->
+      refute email.html_body =~ "the secret ending"
+      refute email.text_body =~ "the secret ending"
+      assert email.html_body =~ "a spoiler warning"
+      assert email.text_body =~ "a spoiler warning"
+    end)
+  end
+
+  test "the digest is in the language of the account's first persona", %{
+    account: account,
+    bob: bob,
+    alice: alice
+  } do
+    # French, because the test env compiles only en, fr, es and it. Told apart by how a date is written, which every locale has, rather than by a phrase whose translation may be missing
+    set(bob, [Bonfire.Common.Localise.Cldr, :default_locale], "fr")
+    liked(alice, bob, "a post bob wrote")
+
+    today_in = fn locale ->
+      Bonfire.Notify.Deliveries.in_locale(locale, fn ->
+        Bonfire.Common.DatesTimes.format_date(Date.utc_today())
+      end)
+    end
+
+    assert {:ok, _} = Digest.send_now(account)
+
+    assert_email_sent(fn email ->
+      refute email.text_body =~ today_in.("en")
+      assert email.text_body =~ today_in.("fr")
+    end)
+
+    # and whatever runs next in this process has the language it had
+    refute Bonfire.Common.Localise.get_locale_id() == :fr
+  end
+
+  test "a post's own characters come through as written, not as HTML entities", %{
+    account: account,
+    bob: bob,
+    alice: alice
+  } do
+    liked(alice, bob, "Q&A tonight: 1 < 2")
+
+    assert {:ok, _} = Digest.send_now(account)
+
+    assert_email_sent(fn email ->
+      assert email.text_body =~ "Q&A tonight: 1 < 2"
+      # escaped once, as HTML must be, and not twice
+      refute email.html_body =~ "&amp;amp;"
+      assert email.html_body =~ "Q&amp;A tonight: 1 &lt; 2"
+    end)
+  end
+
+  test "a long post with no spaces (as in Japanese) still comes as an excerpt", %{
+    account: account,
+    bob: bob,
+    alice: alice
+  } do
+    liked(alice, bob, String.duplicate("語", 300))
+
+    assert {:ok, _} = Digest.send_now(account)
+
+    assert_email_sent(fn email ->
+      refute email.text_body =~ String.duplicate("語", 300)
+      assert email.text_body =~ String.duplicate("語", 100)
+    end)
+  end
+
+  test "a theme that sets only some colours keeps the defaults for the rest", %{
+    account: account,
+    bob: bob,
+    alice: alice
+  } do
+    Process.put([:bonfire, :ui, :auth, :email_theme], primary: "#123456")
+    on_exit(fn -> Process.delete([:bonfire, :ui, :auth, :email_theme]) end)
+    liked(alice, bob, "a post bob wrote")
+
+    assert {:ok, _} = Digest.send_now(account)
+
+    assert_email_sent(fn email ->
+      # what it leaves out (here the muted text and the button's text) is still coloured
+      refute email.html_body =~ ~r/color:\s*;/
+      assert email.html_body =~ "#123456"
     end)
   end
 

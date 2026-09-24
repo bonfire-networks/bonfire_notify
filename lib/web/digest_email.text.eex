@@ -1,4 +1,9 @@
+<%= @title %>
 <%= @intro %>
 <%= for section <- @sections do %>
 <%= section.name %> @<%= section.username %>: <%= lp("%{count} notification", "%{count} notifications", section.count, count: section.count) %>
-<% end %>
+<%= for row <- section.rows do %>
+<%= row.text %>
+<% end %><% end %>
+<%= l("Open notifications") %>: <%= @notifications_url %>
+<%= l("Change which notifications are emailed, and how often") %>: <%= @settings_url %>

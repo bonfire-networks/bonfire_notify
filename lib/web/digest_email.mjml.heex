@@ -1,19 +1,46 @@
-<mjml>
-  <mj-section>
+<mj-section padding="24px 24px 4px">
+  <mj-column>
+    <mj-text font-size="22px" font-weight="700" line-height="1.3">{@title}</mj-text>
+    <mj-text color={Bonfire.UI.Common.Email.Basic.theme()[:muted]} padding-top="4px">{@intro}</mj-text>
+  </mj-column>
+</mj-section>
+<%= for section <- @sections do %>
+  <mj-section padding="20px 24px 4px">
     <mj-column>
-      <mj-text>{@intro}</mj-text>
+      <mj-text font-size="13px" color={Bonfire.UI.Common.Email.Basic.theme()[:muted]}>
+        <strong style="color: inherit;">{section.name}</strong> @{section.username} · {lp(
+          "%{count} notification",
+          "%{count} notifications",
+          section.count,
+          count: section.count
+        )}
+      </mj-text>
     </mj-column>
   </mj-section>
-  <%= for section <- @sections do %>
-    <mj-section>
-      <mj-column>
-        <mj-text font-size="18px" font-weight="bold">
-          {section.name} @{section.username}
-        </mj-text>
-      </mj-column>
-    </mj-section>
-    <%= for activity <- section.activities do %>
-      {raw(activity)}
-    <% end %>
+  <%= for row <- section.rows do %>
+    {raw(row.mjml)}
   <% end %>
-</mjml>
+<% end %>
+<mj-section padding="28px 24px 8px">
+  <mj-column>
+    <mj-button
+      href={@notifications_url}
+      background-color={Bonfire.UI.Common.Email.Basic.theme()[:primary]}
+      color={Bonfire.UI.Common.Email.Basic.theme()[:primary_content]}
+      border-radius="8px"
+      font-size="15px"
+      font-weight="600"
+      inner-padding="12px 28px"
+    >
+      {l("Open notifications")}
+    </mj-button>
+  </mj-column>
+</mj-section>
+<mj-section padding="4px 24px 20px">
+  <mj-column>
+    <mj-text align="center" font-size="12px" color={Bonfire.UI.Common.Email.Basic.theme()[:muted]}>
+      {l("You get this digest because of your notification settings.")}
+      <a href={@settings_url}>{l("Change which notifications are emailed, and how often")}</a>
+    </mj-text>
+  </mj-column>
+</mj-section>
