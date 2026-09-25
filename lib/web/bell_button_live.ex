@@ -20,6 +20,12 @@ defmodule Bonfire.Notify.Web.BellButtonLive do
   prop label, :string, default: nil
   prop label_enabled, :string, default: nil
 
+  @doc "Optional button classes for callers that need the bell to match a surrounding action group."
+  prop button_class, :css_class, default: nil
+
+  @doc "Optional button classes for the enabled state, falling back to `button_class`."
+  prop button_class_enabled, :css_class, default: nil
+
   def update(assigns, socket) do
     socket = assign(socket, assigns)
 

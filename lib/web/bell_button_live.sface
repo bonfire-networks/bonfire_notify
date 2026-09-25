@@ -10,9 +10,19 @@
         phx-click="toggle"
         phx-target={@myself}
         aria-pressed={if @enabled, do: "true", else: "false"}
-        class={"btn btn-sm btn-circle", "btn-primary": @enabled, "btn-ghost": !@enabled}
-        title={text}
+        aria-label={text}
+        data-tip={text}
+        class={
+          e(
+            if(@enabled, do: @button_class_enabled || @button_class, else: @button_class),
+            "btn btn-sm btn-circle touch-target-expanded"
+          ),
+          "tooltip",
+          "btn-primary": is_nil(@button_class) and @enabled,
+          "btn-ghost": is_nil(@button_class) and !@enabled
+        }
       >
+        <span class="touch-target-hit-area" aria-hidden="true" />
         <#Icon iconify={if @enabled, do: "ph:bell-ringing-fill", else: "ph:bell"} class="w-4 h-4" />
         <span class="sr-only">{text}</span>
       </button>
