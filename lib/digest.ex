@@ -65,6 +65,8 @@ defmodule Bonfire.Notify.Digest do
             sections: sections,
             # where to read all of it, and where to change what the digest sends (or stop it)
             notifications_url: Bonfire.Common.URIs.base_url() <> "/notifications",
+            # where the messages a section counts can be read, since the digest says how many and not what
+            messages_url: Bonfire.Common.URIs.base_url() <> "/messages",
             settings_url: Bonfire.Common.URIs.base_url() <> "/settings/user/bonfire_notify"
           })
           |> Bonfire.Mailer.send_now(e(account, :email, :email_address, nil))
@@ -160,24 +162,50 @@ defmodule Bonfire.Notify.Digest do
   defp interval_days(:monthly), do: 30
   defp interval_days(_daily), do: 1
 
-  # one persona's part: what reached it since `since`, in the kinds it left to the digest, or nil when there is nothing
+  # one persona's part: what reached it since `since`, in the kinds it left to the digest, and how many messages are waiting if messages are one of them, or nil when there is nothing
   defp section(user, since) do
-    with [_ | _] = categories <- Preferences.digest_categories(user),
-         [_ | _] = activities <- pending(user, categories, since),
-         # counted once rendered, so the count says what the email shows
-         [_ | _] = rows <-
-           activities
-           |> Enum.map(&EmailContent.activity_email(&1, user))
-           |> Enum.reject(&is_nil/1) do
-      %{
-        name: e(user, :profile, :name, nil),
-        username: e(user, :character, :username, nil),
-        count: length(rows),
-        rows: rows
-      }
+    with [_ | _] = categories <- Preferences.digest_categories(user) do
+      # counted once rendered, so the count says what the email shows
+      rows =
+        pending(user, categories, since)
+        |> Enum.map(&EmailContent.activity_email(&1, user))
+        |> Enum.reject(&is_nil/1)
+
+      messages =
+        if messages_category() in categories, do: unseen_messages(user, since), else: 0
+
+      if rows != [] or messages > 0 do
+        %{
+          name: e(user, :profile, :name, nil),
+          username: e(user, :character, :username, nil),
+          count: length(rows),
+          rows: rows,
+          messages: messages
+        }
+      end
     else
       _ -> nil
     end
+  end
+
+  # the category covering direct messages, asked for by what it covers rather than by its key
+  defp messages_category do
+    Bonfire.Common.Utils.maybe_apply(Bonfire.Social.Notifications, :category_for, [:message],
+      fallback_return: nil
+    )
+  end
+
+  # counted rather than listed: messages arrive in the inbox, not the notifications feed, and the digest says how many are waiting without saying what they say. Unseen ones only, since reading a message marks it seen
+  defp unseen_messages(user, since) do
+    Bonfire.Common.Utils.maybe_apply(
+      Bonfire.Social.FeedActivities,
+      :unseen_count,
+      [
+        :inbox,
+        [current_user: user, current_account: e(user, :accounted, :account, nil), since: since]
+      ],
+      fallback_return: 0
+    ) || 0
   end
 
   defp pending(user, categories, since) do

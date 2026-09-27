@@ -97,6 +97,66 @@ defmodule Bonfire.Notify.EmailChannelTest do
     end)
   end
 
+  describe "says what happened to the reader, in the words of their notifications feed" do
+    # the category's phrase for what it was to this reader, as the notifications feed words it, rather than the plain verb
+    defp publish_and_deliver(author, reader, html_body, attrs \\ %{}) do
+      {:ok, post} =
+        Bonfire.Posts.publish(
+          current_user: author,
+          post_attrs: Map.merge(%{post_content: %{html_body: html_body}}, attrs),
+          boundary: "public"
+        )
+
+      FanOut.notify(e(post, :activity, nil), %{recipients: [%{"user_id" => reader.id}], feeds: []})
+
+      for job <- Oban.Testing.all_enqueued(Bonfire.Common.Repo, worker: Worker),
+          job.args["op"] == "deliver" do
+        assert :ok = Worker.perform(job)
+      end
+
+      post
+    end
+
+    test "a mention says mentioned you", %{alice: alice} do
+      {bob, _post} = author()
+      set(bob, [:notifications, :email, :mention], true)
+
+      publish_and_deliver(alice, bob, "hello @#{bob.character.username}")
+
+      assert_email_sent(fn email -> assert email.subject =~ "mentioned you" end)
+    end
+
+    test "a reply to your post says replied to you", %{alice: alice} do
+      {bob, post} = author()
+      set(bob, [:notifications, :email, :extra_replies], true)
+
+      publish_and_deliver(alice, bob, "an answer", %{reply_to_id: post.id})
+
+      assert_email_sent(fn email -> assert email.subject =~ "replied to you" end)
+    end
+
+    test "a reply in a thread you have a bell on does not say replied to you", %{alice: alice} do
+      {bob, _post} = author()
+      set(bob, [:notifications, :email, :extra_replies], true)
+
+      {:ok, root} =
+        Bonfire.Posts.publish(
+          current_user: fake_user!(),
+          post_attrs: %{post_content: %{html_body: "someone else's thread"}},
+          boundary: "public"
+        )
+
+      {:ok, _} = Bonfire.Notify.Bells.enable(bob, root)
+
+      publish_and_deliver(alice, bob, "a reply in it", %{reply_to_id: root.id})
+
+      assert_email_sent(fn email ->
+        refute email.subject =~ "replied to you"
+        assert email.subject =~ "replied to a discussion"
+      end)
+    end
+  end
+
   test "an email shows only what an email can: the page's buttons and menus are left out of both parts",
        %{alice: alice} do
     {bob, post} = author()
@@ -148,7 +208,10 @@ defmodule Bonfire.Notify.EmailChannelTest do
 
     assert_email_sent(fn email ->
       assert "http" <> _ = avatar
-      assert avatar in (email.html_body |> Floki.parse_document!() |> Floki.attribute("img", "src"))
+
+      assert avatar in (email.html_body
+                        |> Floki.parse_document!()
+                        |> Floki.attribute("img", "src"))
     end)
   end
 

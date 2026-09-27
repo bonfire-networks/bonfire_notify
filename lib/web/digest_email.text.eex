@@ -1,8 +1,9 @@
 <%= @title %>
 <%= @intro %>
 <%= for section <- @sections do %>
-<%= section.name %> @<%= section.username %>: <%= lp("%{count} notification", "%{count} notifications", section.count, count: section.count) %>
-<%= for row <- section.rows do %>
+<%= section.name %> @<%= section.username %><%= if section.count > 0 do %>: <%= lp("%{count} notification", "%{count} notifications", section.count, count: section.count) %><% end %>
+<%= if section.messages > 0 do %><%= lp("%{count} new message", "%{count} new messages", section.messages, count: section.messages) %>: <%= @messages_url %>
+<% end %><%= for row <- section.rows do %>
 <%= row.text %>
 <% end %><% end %>
 <%= l("Open notifications") %>: <%= @notifications_url %>

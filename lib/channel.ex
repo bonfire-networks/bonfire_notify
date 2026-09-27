@@ -93,8 +93,9 @@ defmodule Bonfire.Notify.Channel do
   def push_payload(content) do
     # `ed` rather than `e`, because a delivery job's arguments are JSON and come back with string keys, which the macro would read as missing
     %{
-      title: ed(content, :title, nil),
-      body: ed(content, :body, nil),
+      # empty rather than null, which a client can show as the word "null"
+      title: ed(content, :title, nil) || "",
+      body: ed(content, :body, nil) || "",
       icon: ed(content, :icon, nil),
       tag: ed(content, :tag, nil),
       requireInteraction: ed(content, :require_interaction, false) || false,

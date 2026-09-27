@@ -41,6 +41,9 @@ defmodule Bonfire.Notify.FanOut do
         fallback_return: :skip
       )
     else
+      # loaded once here, since what it was to each recipient (a mention, a reply to their post) turns on the same assocs the content is then assembled from
+      activity = Bonfire.Notify.Content.preloaded(activity)
+
       recipients =
         Bonfire.Notify.Recipients.for_job(
           e(notifying, :recipients, []),
@@ -163,7 +166,9 @@ defmodule Bonfire.Notify.FanOut do
         user_id: user_id,
         feed: feeds[user_id],
         channel: channel,
-        target_id: e(target, :target_id, nil)
+        target_id: e(target, :target_id, nil),
+        # what it was to this recipient, which is what its wording is chosen by
+        experience: verb
       }
     end)
   end

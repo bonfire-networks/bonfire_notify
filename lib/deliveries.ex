@@ -2,7 +2,7 @@ defmodule Bonfire.Notify.Deliveries do
   @moduledoc """
   Turning "these people, on these devices" into one queued delivery each.
 
-  The notification is assembled here, once per language its recipients read, and each delivery job carries what it says. `ActivityPub.Federator.APPublisher` fans out the same way, preparing the outgoing JSON once and giving each `publish_one` job what one inbox needs, and the reason is the same: what a notification says is the same for everyone who gets it, so assembling it per delivery would pay N times over for one piece of work. Only the language differs, and there are far fewer languages than recipients.
+  The notification is assembled here, once per language its recipients read and per what it was to them (a mention, a reply to their post, a reply in a thread they follow), and each delivery job carries what it says. `ActivityPub.Federator.APPublisher` fans out the same way, preparing the outgoing JSON once and giving each `publish_one` job what one inbox needs, and the reason is the same: what a notification says is the same for everyone who gets it, so assembling it per delivery would pay N times over for one piece of work. Only the language differs, and there are far fewer languages than recipients.
 
   What each job carries is the content rather than finished bytes, because the *shape* is not the same for everyone: a Mastodon client reads a different payload than our own service worker, and which one a target is is known at delivery. Encoding is cheap and happens there; the expensive part, loading and describing the activity, still happens once.
 
@@ -33,12 +33,20 @@ defmodule Bonfire.Notify.Deliveries do
     activity_id = Types.uid(activity)
     languages = Map.new(recipients, fn {user, _feed} -> {Types.uid(user), language_of(user)} end)
     users = Map.new(recipients, fn {user, _feed} -> {Types.uid(user), user} end)
+    about_id = Content.about_id(activity)
 
     jobs =
       targets
-      |> Enum.group_by(&languages[e(&1, :user_id, nil)])
-      |> Enum.flat_map(fn {language, its_targets} ->
-        %{content: content, opts: send_opts} = assembled_in(language, activity)
+      # what it says turns on the language, what it was to the recipient, and whether it is about them ("replied to you" or "replied to a discussion"), so it is assembled once per combination rather than once per recipient
+      |> Enum.group_by(fn target ->
+        user_id = e(target, :user_id, nil)
+
+        {languages[user_id], e(target, :experience, nil),
+         not is_nil(user_id) and user_id == about_id}
+      end)
+      |> Enum.flat_map(fn {{language, experience, about_reader?}, its_targets} ->
+        %{content: content, opts: send_opts} =
+          assembled_in(language, activity, experience, about_reader?)
 
         {now, queued} = Enum.split_with(its_targets, &immediate?/1)
 
@@ -108,8 +116,8 @@ defmodule Bonfire.Notify.Deliveries do
     end
   end
 
-  defp assembled_in(language, activity),
-    do: in_locale(language, fn -> Content.for_delivery(activity) end)
+  defp assembled_in(language, activity, experience, about_reader?),
+    do: in_locale(language, fn -> Content.for_delivery(activity, experience, about_reader?) end)
 
   defp batch_size do
     Config.get([__MODULE__, :batch_size], 500,

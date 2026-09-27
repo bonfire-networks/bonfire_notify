@@ -59,7 +59,10 @@ defmodule Bonfire.Notify.RuntimeConfig do
       # what to load about an activity in order to say what its notification says: who it is from, what it is about, and which thread it belongs to
       preloads: [
         :verb,
-        :replied,
+        # who it names, which decides who it is a mention to
+        :tags,
+        # whose post it answers, which decides whether a reply is worded as to the reader
+        replied: [reply_to: [:created]],
         subject: [:character, profile: :icon],
         object: [:post_content]
       ],

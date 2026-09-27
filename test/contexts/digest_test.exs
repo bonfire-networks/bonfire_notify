@@ -93,6 +93,7 @@ defmodule Bonfire.Notify.DigestTest do
       assert email.html_body =~ since
       assert email.text_body =~ since
       assert email.html_body =~ "@#{bob.character.username}"
+
       # a component with no email template (the post's actions) is dropped, not named: no module name reaches the reader
       refute email.html_body =~ "Elixir."
 

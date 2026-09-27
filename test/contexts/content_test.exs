@@ -111,6 +111,39 @@ defmodule Bonfire.Notify.ContentTest do
     assert opts[:urgency] == :high
   end
 
+  describe "a follow" do
+    # what is followed is the reader, so there is nothing of theirs to quote: what tells them something is who is following them
+    setup %{alice: alice} do
+      follower = fake_user!()
+      {:ok, follow} = Bonfire.Social.Graph.Follows.follow(follower, alice)
+      {:ok, follower: follower, follow: follow}
+    end
+
+    test "says who the follower is, with their bio, read by id", %{
+      follower: follower,
+      follow: follow
+    } do
+      bio = Bonfire.Common.Text.text_only(follower.profile.summary)
+      # the positive first: the fixture has a bio to show
+      assert is_binary(bio) and bio != ""
+
+      assert %{content: %{body: body}} = Content.for_delivery(activity_of(follow))
+      assert body =~ String.slice(bio, 0, 40)
+    end
+
+    test "says the same with the activity already in memory", %{
+      follower: follower,
+      follow: follow
+    } do
+      activity = activity_in_memory(follow) || activity_of(follow)
+
+      assert %{content: %{body: body}} = Content.for_delivery(activity)
+
+      assert body =~
+               String.slice(Bonfire.Common.Text.text_only(follower.profile.summary), 0, 40)
+    end
+  end
+
   test "a like is worth less of a push service's patience than a mention", %{alice: alice} do
     post = post!(alice, "something to react to")
     bob = fake_user!()

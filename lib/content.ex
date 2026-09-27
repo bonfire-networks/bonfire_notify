@@ -20,13 +20,16 @@ defmodule Bonfire.Notify.Content do
   Both at once because both turn on the verb, and resolving it twice would read the same config and ask the same question twice. `content` is what a client shows: title, body, icon, url, `tag` (what it collapses on, so a burst about one object replaces itself rather than stacking), verb and activity id. `opts` is what a push transport takes: `ttl` in seconds, so a mention is still worth arriving tomorrow and a like is not, `urgency`, and `topic`, which lets the push service replace an undelivered push about the same thing rather than queue another.
 
   Says it in whatever language the process locale is set to, which is how one activity is assembled once per locale its recipients read rather than once per recipient.
+
+  With the `experience` it was to its recipients (what the fan-out grouped them by) and whether it is about them (`about_id/1`), the title says it in the words of their notifications feed ("mentioned you", "replied to you"), from the phrase the category declares for it (`Bonfire.Social.Notifications.phrase_for/3`), and otherwise with the plain verb.
   """
-  def for_delivery(activity) do
+  def for_delivery(activity, experience \\ nil, about_reader? \\ false) do
     activity = preloaded(activity)
     object = e(activity, :object, nil)
     verb = verb_of(activity, object)
     collapse_id = collapse_id(activity, verb)
     preview? = metadata(verb, :preview, true) != false
+    subject = e(activity, :subject, nil)
 
     # who did what, what it said, where it points: all of that is about the data model, so it is asked for rather than worked out again here, and a flash and a push then say the same thing about the same activity
     described =
@@ -35,10 +38,16 @@ defmodule Bonfire.Notify.Content do
     %{
       content: %{
         title:
-          if(preview?,
-            do: e(described, :title, nil),
-            else: private_phrase(subject_name(e(activity, :subject, nil)), verb)
-          ),
+          cond do
+            not preview? ->
+              private_phrase(subject_name(subject), verb)
+
+            phrase = experience && phrase_for(experience, about_reader?) ->
+              "#{subject_name(subject)} #{phrase}"
+
+            true ->
+              e(described, :title, nil)
+          end,
         body: if(preview?, do: shortened(e(described, :body, nil))),
         icon: e(described, :icon, nil),
         url: e(described, :url, nil),
@@ -57,16 +66,39 @@ defmodule Bonfire.Notify.Content do
     |> debug("assembled a notification")
   end
 
-  # an activity arrives in two states: loaded by id in the fan-out job, or already whole from a caller that had it in memory. Nothing is re-fetched for the second, since a loaded assoc is left alone.
+  @doc """
+  Whose notification this is about, to tell "replied to you" from "replied to a discussion", decided as the notifications feed's rows decide it (`Bonfire.Social.Notifications.about_id/2`).
+  """
+  def about_id(activity) do
+    maybe_apply(Bonfire.Social.Notifications, :about_id, [preloaded(activity)],
+      fallback_return: nil
+    )
+  end
+
+  # asked rather than called, since this extension doesn't depend on `bonfire_social`, which owns the categories and their phrases
+  defp phrase_for(experience, about_reader?) do
+    maybe_apply(Bonfire.Social.Notifications, :phrase_for, [experience, about_reader?, nil],
+      fallback_return: nil
+    )
+  end
+
+  @doc """
+  The activity with what saying it needs loaded, including what it was to each reader (who it names, whose post it answers), so the fan-out loads it once and both groups its recipients and assembles the content from the same load.
+
+  An activity arrives in two states: loaded by id in the fan-out job, or already whole from a caller that had it in memory. Nothing is re-fetched for the second, since a loaded assoc is left alone.
+  """
   # `prune: true` because what an activity is about varies by verb (a post, a person followed, an edge), and one shape that doesn't fit the list would otherwise raise and take every notification in the batch with it
-  defp preloaded(activity), do: repo().maybe_preload(activity, preloads(), prune: true)
+  def preloaded(activity), do: repo().maybe_preload(activity, preloads(), prune: true)
 
   defp preloads do
     Config.get(
       [__MODULE__, :preloads],
       [
         :verb,
-        :replied,
+        # who it names, which decides who it is a mention to
+        :tags,
+        # whose post it answers, which decides whether a reply is worded as to the reader (`about_id/1`)
+        replied: [reply_to: [:created]],
         subject: [:character, profile: :icon],
         object: [:post_content]
       ],
