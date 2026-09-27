@@ -275,7 +275,9 @@ defmodule Bonfire.Notify.API.MastoPushAdapter do
            access_token: token,
            preferred_locale: to_string(ed(content, :locale, nil)),
            notification_id: ed(content, :activity_id, nil),
-           notification_type: to_string(alert_key(ed(content, :verb, nil))),
+           # what it was to this recipient, as `accepts?/2` was asked, else the stored verb
+           notification_type:
+             to_string(alert_key(ed(content, :experience, nil) || ed(content, :verb, nil))),
            icon: ed(content, :icon, nil),
            title: ed(content, :title, nil),
            body: ed(content, :body, nil)
@@ -310,8 +312,16 @@ defmodule Bonfire.Notify.API.MastoPushAdapter do
   def alert_key(verb) when is_binary(verb),
     do: alert_key(Bonfire.Common.Types.maybe_to_atom!(verb))
 
-  def alert_key(verb) when is_atom(verb) and not is_nil(verb),
-    do: alert_keys() |> Map.get(verb)
+  # what a notification category claims is named as the notification list names it, from the categories' `masto:`, so a client is pushed the same type it then fetches. `alert_keys` names only what no category claims
+  def alert_key(verb) when is_atom(verb) and not is_nil(verb) do
+    if Bonfire.Social.Notifications.category_for(verb) do
+      verb
+      |> Bonfire.Social.Notifications.masto_type_for()
+      |> Bonfire.API.MastoCompat.Schemas.Notification.type_name()
+    else
+      Map.get(alert_keys(), verb)
+    end
+  end
 
   def alert_key(_), do: nil
 

@@ -63,7 +63,7 @@ defmodule Bonfire.Notify.LiveChannelTest do
     bob: bob,
     bobs_post: post
   } do
-    # worded once per language by `Bonfire.Notify.Deliveries`, from the recipient's own setting, since the process sending it knows nothing of who reads it. French, because the test env compiles only en, fr, es and it (`config/ember.exs`), and "liked" is translated in fr
+    # worded once per language by `Bonfire.Notify.Deliveries`, from the recipient's own setting, since the process sending it knows nothing of who reads it. French, because the test env compiles only en, fr, es and it (`config/ember.exs`), and the title's phrase ("liked your activity", from the Reactions category) is translated in fr's `bonfire_social` catalogue
     Bonfire.Common.Settings.put([Bonfire.Common.Localise.Cldr, :default_locale], "fr",
       current_user: bob
     )

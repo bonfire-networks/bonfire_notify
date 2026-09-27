@@ -5,6 +5,7 @@ defmodule Bonfire.Notify.BellsTest do
   Off unless the person enables it, never by following alone. With it on, the author's new posts reach the reader's notifications as the post's own activity, through the same fan-out as a mention. A bell on a person covers their new posts, not their replies, which belong to the threads they are in.
   """
   use Bonfire.Notify.DataCase, async: true
+  use Bonfire.Common.E
 
   alias Bonfire.Notify.Bells
   alias Bonfire.Social.Graph.Follows
@@ -151,6 +152,56 @@ defmodule Bonfire.Notify.BellsTest do
       assert {:ok, _} = Bells.enable(reader, group)
 
       assert notified?(reader, post_in(group, "<p>news for the group</p>"))
+    end
+
+    # whichever activity brings it (the post itself, or the group's automatic boost of it), a post in a group with a bell on is news from that group, not somebody boosting the reader's post, so it is not under Boosts: neither its chip nor its switches
+    test "a post in a group with a bell on is not under Boosts tab", %{
+      group: group,
+      reader: reader
+    } do
+      member(group, reader)
+      assert {:ok, _} = Bells.enable(reader, group)
+      post = post_in(group, "<p>news for the group</p>")
+
+      # the positive first: it did reach the reader
+      assert notified?(reader, post)
+
+      # the reader's notifications through the `:notifications` preset, as the page loads them, narrowed by a category the way a chip is. `feed_name` goes with the filters, or a partial filter map turns the feed into `:custom`
+      notifications = fn filters ->
+        Bonfire.Social.FeedLoader.feed(
+          :notifications,
+          Map.merge(%{feed_name: :notifications}, filters),
+          current_user: reader
+        )
+      end
+
+      # the chip, through the same condition the Boosts chip and its switch use. First what does belong there, so the refute below can't pass on a query that finds nothing
+      own_post = publish(reader, "a post of the reader's own")
+      {:ok, _} = Bonfire.Social.Boosts.boost(fake_user!(), own_post)
+      under_boosts = notifications.(%{notification_categories: [:boost]})
+
+      assert Bonfire.Social.FeedLoader.feed_contains?(under_boosts, own_post,
+               current_user: reader
+             )
+
+      refute Bonfire.Social.FeedLoader.feed_contains?(under_boosts, post, current_user: reader)
+
+      # the switches, as push and email decide it for each activity that arrived
+      about_the_post =
+        notifications.(%{})
+        |> e(:edges, [])
+        |> Enum.map(&(e(&1, :activity, nil) || &1))
+        |> Enum.filter(&(e(&1, :object_id, nil) == Bonfire.Common.Types.uid(post)))
+        |> Bonfire.Common.Repo.maybe_preload([:verb, :tags, replied: [reply_to: :created]])
+
+      assert [_ | _] = about_the_post
+
+      for activity <- about_the_post do
+        experience = Bonfire.Social.Activities.experienced_as(activity, reader)
+
+        refute Bonfire.Social.Notifications.category_for(experience) == :boost,
+               "#{inspect(experience)} falls under Boosts"
+      end
     end
 
     test "without the bell, a post in the group does not notify", %{group: group, reader: reader} do

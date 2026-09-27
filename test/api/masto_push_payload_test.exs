@@ -159,7 +159,9 @@ defmodule Bonfire.Notify.API.MastoPushPayloadTest do
     # Mastodon's shape: flat, and carrying the token so the client can fetch the notification itself
     assert theirs["access_token"]
     assert theirs["notification_id"] == post.id
-    assert theirs["notification_type"] == "mention"
+
+    # the post names nobody, so to its recipient it is a post they asked to hear about, which Mastodon calls a `status`, not a mention
+    assert theirs["notification_type"] == "status"
     assert theirs["title"]
     assert theirs["preferred_locale"]
     refute theirs["data"], "Mastodon's payload is flat, so nothing is nested under data"
@@ -215,5 +217,25 @@ defmodule Bonfire.Notify.API.MastoPushPayloadTest do
 
     assert [_still_there] = repo().many(UserPushSubscription),
            "the subscription stays: deleting it on revoke would be bookkeeping, not the mechanism"
+  end
+
+  # a client is told about something by push, then fetches it from the list, so both must call it the same, and the list's name for it is what the categories declare
+  test "a push names each kind of notification as the notification list does" do
+    disagreements =
+      for {key, _category} <- Bonfire.Social.Notifications.categories(),
+          experience <- Bonfire.Social.Notifications.experiences_for(key) do
+        list_type =
+          experience
+          |> Bonfire.Social.Notifications.masto_type_for()
+          |> Bonfire.API.MastoCompat.Schemas.Notification.type_name()
+
+        {experience,
+         push: Bonfire.Notify.API.MastoPushAdapter.alert_key(experience), list: list_type}
+      end
+      |> Enum.reject(fn {_experience, push: push_type, list: list_type} ->
+        push_type == list_type
+      end)
+
+    assert disagreements == []
   end
 end
