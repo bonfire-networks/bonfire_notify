@@ -1,15 +1,5 @@
 import { PWAUtils } from "./pwa-utils";
 
-// Clear stale badge count when user returns to the app
-if ('clearAppBadge' in navigator) {
-  const clearBadge = () => navigator.clearAppBadge().catch(() => {});
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') clearBadge();
-  });
-  window.addEventListener('focus', clearBadge);
-  clearBadge();
-}
-
 let NotifyHooks = {};
 
 // A second, older hook (PushNotificationHook) lived here: ~315 lines whose only host was a component that was never mounted, so none of it ran. What it did that is worth having was carried into the hook below rather than deleted with it: checking that a removed endpoint is *this* browser's before unsubscribing, and the subscribe-failure diagnostics (browser info, plus the Firefox AbortError guidance, which is the one thing that makes a remote report actionable). Its browser-vs-server status comparison is now `checkCurrentSubscription`, which reports and lets the server decide, while the half that poked at button text and a status dot is superseded by state the server renders.
@@ -24,7 +14,6 @@ NotifyHooks.PushSettingsHook = {
   async mounted() {
     this.vapidKey = this.el.dataset.vapidKey;
     this.swRegistration = null;
-    this.deferredPrompt = null;
 
     // Store bound handlers for cleanup
     this._boundHandlers = {};
@@ -63,57 +52,29 @@ NotifyHooks.PushSettingsHook = {
 
   destroyed() {
     // Clean up event listeners
-    if (this._boundHandlers.beforeinstallprompt) {
-      window.removeEventListener('beforeinstallprompt', this._boundHandlers.beforeinstallprompt);
-    }
+    this._boundHandlers.unsubscribeInstallable?.();
     if (this._boundHandlers.installClick) {
       const installBtn = document.getElementById('pwa-install-btn');
       if (installBtn) {
         installBtn.removeEventListener('click', this._boundHandlers.installClick);
       }
     }
-    this.deferredPrompt = null;
     this.swRegistration = null;
   },
 
   setupPwaInstall() {
     const installSection = document.getElementById('pwa-install-section');
     const installBtn = document.getElementById('pwa-install-btn');
+    if (!installSection) return;
 
-    // Store bound handler for cleanup
-    this._boundHandlers.beforeinstallprompt = (e) => {
-      e.preventDefault();
-      this.deferredPrompt = e;
-      // Show the install section
-      if (installSection) {
-        installSection.classList.remove('hidden');
-      }
-    };
-    window.addEventListener('beforeinstallprompt', this._boundHandlers.beforeinstallprompt);
+    // the browser only offers a prompt while not installed
+    this._boundHandlers.unsubscribeInstallable = PWAUtils.onInstallable((prompt) => {
+      installSection.classList.toggle('hidden', !prompt || PWAUtils.isPWAMode());
+    });
 
-    // Handle install button click
     if (installBtn) {
-      this._boundHandlers.installClick = async () => {
-        if (!this.deferredPrompt) return;
-
-        this.deferredPrompt.prompt();
-        const { outcome } = await this.deferredPrompt.userChoice;
-
-        if (outcome === 'accepted') {
-          if (installSection) {
-            installSection.classList.add('hidden');
-          }
-        }
-        this.deferredPrompt = null;
-      };
+      this._boundHandlers.installClick = () => PWAUtils.promptInstall();
       installBtn.addEventListener('click', this._boundHandlers.installClick);
-    }
-
-    // Hide install section if already installed as PWA
-    if (window.matchMedia('(display-mode: standalone)').matches) {
-      if (installSection) {
-        installSection.classList.add('hidden');
-      }
     }
   },
 
@@ -278,76 +239,53 @@ NotifyHooks.PushSettingsHook = {
   }
 };
 
+// a dismissal means "not now": the banner returns after this long
+const INSTALL_DISMISS_MS = 30 * 24 * 60 * 60 * 1000;
+
+function installDismissedRecently() {
+  try {
+    const dismissedAt = Number(localStorage.getItem('pwa-install-dismissed'));
+    return dismissedAt > 0 && Date.now() - dismissedAt < INSTALL_DISMISS_MS;
+  } catch (_e) {
+    return false;
+  }
+}
+
 NotifyHooks.PWAInstallBannerHook = {
   mounted() {
-    this.deferredPrompt = null;
-    this._handlers = {};
-
     const banner = this.el;
     const installBtn = this.el.querySelector('[data-pwa-install]');
     const dismissBtn = this.el.querySelector('[data-pwa-dismiss]');
     const iosInstructions = this.el.querySelector('[data-pwa-ios]');
 
-    if (localStorage.getItem('pwa-install-dismissed') || PWAUtils.isPWAMode()) {
+    if (installDismissedRecently() || PWAUtils.isPWAMode()) {
       return;
     }
 
-    if (PWAUtils.isIOS()) {
+    // iOS has no install prompt, only the Share menu steps
+    const ios = PWAUtils.isIOS();
+    iosInstructions?.classList.toggle('hidden', !ios);
+    installBtn?.classList.toggle('hidden', ios);
+
+    if (ios) {
       banner.classList.remove('hidden');
-      if (iosInstructions) iosInstructions.classList.remove('hidden');
-      if (installBtn) installBtn.classList.add('hidden');
+    } else {
+      this.unsubscribeInstallable = PWAUtils.onInstallable((prompt) => {
+        banner.classList.toggle('hidden', !prompt);
+      });
     }
 
-    // Android/Desktop: show banner when beforeinstallprompt fires
-    this._handlers.beforeinstallprompt = (e) => {
-      e.preventDefault();
-      this.deferredPrompt = e;
-      banner.classList.remove('hidden');
-      if (iosInstructions) iosInstructions.classList.add('hidden');
-      if (installBtn) installBtn.classList.remove('hidden');
-    };
-    window.addEventListener('beforeinstallprompt', this._handlers.beforeinstallprompt);
-
-    if (installBtn) {
-      this._handlers.installClick = async () => {
-        if (!this.deferredPrompt) return;
-        this.deferredPrompt.prompt();
-        const { outcome } = await this.deferredPrompt.userChoice;
-        this.deferredPrompt = null;
-        if (outcome === 'accepted') banner.classList.add('hidden');
-      };
-      installBtn.addEventListener('click', this._handlers.installClick);
-    }
-
-    if (dismissBtn) {
-      this._handlers.dismissClick = () => {
-        banner.classList.add('hidden');
-        localStorage.setItem('pwa-install-dismissed', Date.now().toString());
-      };
-      dismissBtn.addEventListener('click', this._handlers.dismissClick);
-    }
-
-    this._handlers.appinstalled = () => {
+    installBtn?.addEventListener('click', () => PWAUtils.promptInstall());
+    dismissBtn?.addEventListener('click', () => {
       banner.classList.add('hidden');
-      this.deferredPrompt = null;
-    };
-    window.addEventListener('appinstalled', this._handlers.appinstalled);
+      try {
+        localStorage.setItem('pwa-install-dismissed', Date.now().toString());
+      } catch (_e) {}
+    });
   },
 
   destroyed() {
-    if (this._handlers.beforeinstallprompt) {
-      window.removeEventListener('beforeinstallprompt', this._handlers.beforeinstallprompt);
-    }
-    if (this._handlers.appinstalled) {
-      window.removeEventListener('appinstalled', this._handlers.appinstalled);
-    }
-    if (this._handlers.installClick) {
-      this.el.querySelector('[data-pwa-install]')?.removeEventListener('click', this._handlers.installClick);
-    }
-    if (this._handlers.dismissClick) {
-      this.el.querySelector('[data-pwa-dismiss]')?.removeEventListener('click', this._handlers.dismissClick);
-    }
-    this.deferredPrompt = null;
+    this.unsubscribeInstallable?.();
   }
 };
 

@@ -1,3 +1,18 @@
+// `beforeinstallprompt` fires once, often before any hook has mounted, so it's caught at bundle load and handed out via `PWAUtils`.
+const INSTALLABLE_EVENT = 'bonfire:pwa-installable';
+let deferredInstallPrompt = null;
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  window.dispatchEvent(new Event(INSTALLABLE_EVENT));
+});
+
+window.addEventListener('appinstalled', () => {
+  deferredInstallPrompt = null;
+  window.dispatchEvent(new Event(INSTALLABLE_EVENT));
+});
+
 export const PWAUtils = {
   isStandalone() {
     return window.matchMedia('(display-mode: standalone)').matches;
@@ -26,22 +41,21 @@ export const PWAUtils = {
            window.matchMedia('(display-mode: fullscreen)').matches;
   },
 
-  promptToInstallPWA() {
-    let deferredPrompt = null;
-    window.addEventListener('beforeinstallprompt', (e) => {
-      e.preventDefault();
-      deferredPrompt = e;
-      const installBtn = document.getElementById('install-button');
+  // The prompt Chrome offered, if it has and it is still unused (see the listener at the top of this file).
+  // Calls `callback` with the prompt (or null) now if installable, and on every change. Returns the unsubscribe.
+  onInstallable(callback) {
+    if (deferredInstallPrompt) callback(deferredInstallPrompt);
+    const handler = () => callback(deferredInstallPrompt);
+    window.addEventListener(INSTALLABLE_EVENT, handler);
+    return () => window.removeEventListener(INSTALLABLE_EVENT, handler);
+  },
 
-      if (installBtn) {
-        installBtn.addEventListener('click', async () => {
-          installBtn.disabled = true;
-          deferredPrompt.prompt();
-          installBtn.disabled = false;
-          installBtn.style.display = 'none';
-          deferredPrompt = null;
-        }, { once: true });
-      }
-    });
+  // a prompt can only be shown once
+  promptInstall() {
+    const prompt = deferredInstallPrompt;
+    if (!prompt) return;
+    deferredInstallPrompt = null;
+    window.dispatchEvent(new Event(INSTALLABLE_EVENT));
+    prompt.prompt();
   }
 };
