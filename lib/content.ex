@@ -53,6 +53,8 @@ defmodule Bonfire.Notify.Content do
         url: e(described, :url, nil),
         tag: collapse_id,
         verb: verb,
+        # what it was to the recipients this was assembled for, which is what a Mastodon client's `notification_type` names (a post that doesn't mention you is a `status` to it, though stored as a create)
+        experience: experience,
         activity_id: uid(activity),
         # what language this was assembled in, read from the locale rather than passed in, since that is what the wording above actually came out of. Its id rather than the whole CLDR tag, since this travels through a job's JSON and what a client wants is `en`. Mastodon's payload carries it
         locale: Bonfire.Common.Localise.get_locale_id()

@@ -80,26 +80,28 @@ defmodule Bonfire.Notify.RuntimeConfig do
         vote: %{ttl: 3_600, urgency: :low}
       }
 
-    # What each kind of notification is called in Mastodon's API, for the one place that translates: a client's `alerts` map is keyed by these, everything else here speaks Bonfire verbs. A verb absent from this map cannot be muted by a Mastodon client, since the client has no name for it
+    # What Mastodon's API calls the kinds of notification that no notification category claims. Whatever a category claims is named by the category's `masto:` instead (`MastoPushAdapter.alert_key/1`), the same name the notification list gives it. A verb with no name here or there cannot be muted by a Mastodon client, since the client has no name for it
     config :bonfire_notify, Bonfire.Notify.API.MastoPushAdapter,
       alert_keys: %{
-        # a post reaching your notifications addressed you, which is what Mastodon calls a mention. Our own taxonomy stores it as a `create` (`Bonfire.Social.Notifications`' `mention` category names `activity_types: [:create]`), so both spellings map here
+        # a post reaching your notifications addressed you, which is what Mastodon calls a mention. Our own taxonomy stores it as a `create` (`Bonfire.Social.Notifications`' `mention` category names `activity_types: [:create]`)
         create: "mention",
-        mention: "mention",
-        reply: "mention",
-        message: "mention",
         # an admin broadcast is a post, so this is what it is rather than a stand-in: Mastodon's `status` means "a new post you asked to hear about"
         broadcast: "status",
-        # the ask, filed under the same switch as the quoting it asks for
-        quote_request: "quote",
-        like: "favourite",
-        boost: "reblog",
-        follow: "follow",
-        request: "follow_request",
-        quote: "quote",
-        flag: "admin.report",
-        vote: "poll",
+        # a post that reached you without naming you, which is what a bell on a person or group brings: Mastodon's `status`, what it sends for an account you turned notifications on for. A post addressed to you through a circle is this too, since it doesn't mention you
+        write: "status",
         edit: "update"
+        # claimed by a notification category, so named by its `masto:` now:
+        # mention: "mention",
+        # reply: "status",
+        # message: "mention",
+        # quote_request: "quote",
+        # like: "favourite",
+        # boost: "reblog",
+        # follow: "follow",
+        # request: "follow_request",
+        # quote: "quote",
+        # flag: "admin.report",
+        # vote: "poll",
       },
       # every type the API documents, because a response has to carry all of them and a client can only display the keys it is given. `docs.joinmastodon.org/methods/push/`, including `quote` and `quoted_update` from Mastodon 4.5
       response_types: [
