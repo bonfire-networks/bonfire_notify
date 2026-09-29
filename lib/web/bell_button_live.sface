@@ -1,30 +1,53 @@
-{!-- the root is always there, as a stateful component's must be; only a signed-in person gets a bell inside it --}
-<div data-role="bell_button">
+{!-- the root is always there, as a stateful component's must be; only a signed-in person gets a bell inside it. Its id is what a menu's `load` push targets --}
+<div id={@id} data-role={if @menu_item, do: "bell_menu_item", else: "bell_button"}>
   {#case if @enabled,
       do: @label_enabled || l("Stop notifying me"),
       else: @label || l("Notify me about new posts")}
     {#match text}
-      <button
-        :if={current_user_id(@__context__)}
-        type="button"
-        phx-click="toggle"
-        phx-target={@myself}
-        aria-pressed={if @enabled, do: "true", else: "false"}
-        aria-label={text}
-        data-tip={text}
-        class={
-          e(
-            if(@enabled, do: @button_class_enabled || @button_class, else: @button_class),
-            "btn btn-sm btn-circle touch-target-expanded"
-          ),
-          "tooltip",
-          "btn-primary": is_nil(@button_class) and @enabled,
-          "btn-ghost": is_nil(@button_class) and !@enabled
-        }
-      >
-        <span class="touch-target-hit-area" aria-hidden="true" />
-        <#Icon iconify={if @enabled, do: "ph:bell-ringing-fill", else: "ph:bell"} class="w-4 h-4" />
-        <span class="sr-only">{text}</span>
-      </button>
+      {#if !current_user_id(@__context__)}
+      {#elseif @menu_item and is_nil(@enabled)}
+        {!-- placeholder until the menu is opened and whether it's on has been asked --}
+        <div aria-hidden="true" class="flex items-center justify-between gap-2 w-full">
+          <div class="h-3 w-32 rounded bg-base-content/10 animate-pulse" />
+          <div class="w-5 h-5 shrink-0 rounded-full bg-base-content/10 animate-pulse" />
+        </div>
+      {#elseif @menu_item}
+        <button
+          type="button"
+          phx-click="toggle"
+          phx-target={@myself}
+          aria-pressed={if @enabled, do: "true", else: "false"}
+          title={@hint}
+          class="flex items-center justify-between gap-2 text-sm text-base-content w-full"
+        >
+          <span class="flex-1 text-sm text-left">{text}</span>
+          <#Icon
+            iconify={if @enabled, do: "ph:bell-ringing-fill", else: "ph:bell"}
+            class="w-5 h-5 shrink-0"
+          />
+        </button>
+      {#else}
+        <button
+          type="button"
+          phx-click="toggle"
+          phx-target={@myself}
+          aria-pressed={if @enabled, do: "true", else: "false"}
+          aria-label={text}
+          data-tip={if @hint, do: "#{text}. #{@hint}", else: text}
+          class={
+            e(
+              if(@enabled, do: @button_class_enabled || @button_class, else: @button_class),
+              "btn btn-sm btn-circle touch-target-expanded"
+            ),
+            "tooltip",
+            "btn-primary": is_nil(@button_class) and @enabled,
+            "btn-ghost": is_nil(@button_class) and !@enabled
+          }
+        >
+          <span class="touch-target-hit-area" aria-hidden="true" />
+          <#Icon iconify={if @enabled, do: "ph:bell-ringing-fill", else: "ph:bell"} class="w-4 h-4" />
+          <span class="sr-only">{text}</span>
+        </button>
+      {/if}
   {/case}
 </div>

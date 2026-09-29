@@ -7,7 +7,7 @@ defmodule Bonfire.Notify.FanOut do
 
   `Seen` is account-keyed, so reading something as one persona counts for all of them, which is deliberate.
 
-  The boundary check is `Boundaries.users_grants_on/3` rather than a per-recipient `can?/3` or `load_pointers/2`, which would be one query each. It reads the same `Summary` view a feed's own filter does (`Boundaries.Queries.query_with_summary/2`), with the same circle expansion and the same negative precedence, so it sees what the reader would see in their feed. Blocks included: hiding or locking an object writes `:cannot_discover`/`:cannot_participate` grants on its ACL, and blocking a person puts them in stereotype circles whose grants are in that view too.
+  The boundary check is `Boundaries.users_grants_on/3` rather than a per-recipient `can?/3` or `load_pointers/2`, which would be one query each. It reads the same `Summary` view a feed's own filter does (`Boundaries.Queries.query_with_summary/2`), with the same circle expansion and the same negative precedence, so it sees what the reader would see in their feed. Blocks included: hiding or locking an object writes `:can_only_read`/`:cannot_participate_or_more` grants on its ACL, and blocking a person puts them in stereotype circles whose grants are in that view too.
   """
   use Bonfire.Common.Repo
   use Bonfire.Common.E
@@ -15,6 +15,7 @@ defmodule Bonfire.Notify.FanOut do
   import Untangle
 
   alias Bonfire.Boundaries
+  alias Bonfire.Common.Enums
   alias Bonfire.Common.Types
   alias Bonfire.Data.Edges.Edge
 
@@ -44,15 +45,39 @@ defmodule Bonfire.Notify.FanOut do
       # loaded once here, since what it was to each recipient (a mention, a reply to their post) turns on the same assocs the content is then assembled from
       activity = Bonfire.Notify.Content.preloaded(activity)
 
-      recipients =
+      resolved =
         Bonfire.Notify.Recipients.for_job(
           e(notifying, :recipients, []),
           e(notifying, :feeds, []),
           exclude: e(activity, :subject_id, nil) || e(activity, :subject, nil)
         )
-        |> still_to_notify(activity)
 
-      by_experience = by_experience(recipients, activity)
+      # the two checks of `still_to_notify/3` apart, since who can't see it is also who shouldn't have it in their notifications at all
+      object = e(activity, :object, nil) || e(activity, :object_id, nil)
+      seeing = reject_cannot_see(resolved, object)
+
+      # only where a boundary was actually checked: with no object, nobody passes, and that says nothing about who may read it
+      if object, do: remove_from_unseeing(resolved, seeing, activity)
+
+      recipients = reject_already_seen(seeing, Types.uid(activity))
+      bump_counters(recipients)
+
+      # who you hear from: a notification from an audience someone hides still counts (it's under Hidden), but isn't pushed, emailed or put in a digest. One query for everyone who hides anything, none when nobody does
+      hidden_ids =
+        Bonfire.Common.Utils.maybe_apply(
+          Bonfire.Social.Notifications,
+          :hidden_from,
+          [Types.uid(activity), Enum.map(recipients, fn {user, _feed} -> user end)],
+          fallback_return: []
+        )
+        |> List.wrap()
+
+      recipients =
+        Enum.reject(recipients, fn {user, _feed} -> Enums.id(user) in hidden_ids end)
+
+      by_experience =
+        by_experience(recipients, activity, e(notifying, :wrote_above, nil))
+
       queue_digests(by_experience, activity)
 
       by_experience
@@ -102,9 +127,14 @@ defmodule Bonfire.Notify.FanOut do
     |> targets_by_experience()
   end
 
-  # grouped because what an activity IS depends on who is being told: one post is a mention to the person it names and a plain write to everybody else, and both their switch and a Mastodon client's alert keys turn on that difference
-  defp by_experience(recipients, activity),
-    do: Enum.group_by(recipients, fn {user, _feed} -> experienced_as(activity, user) end)
+  # grouped because what an activity IS depends on who is being told: one post is a mention to the person it names and a plain write to everybody else, and both their switch and a Mastodon client's alert keys turn on that difference. `wrote_above` is who, of those following a discussion, wrote the post they follow it by (`Feeds.to_notify_of_this/6`), so a reply is Replies to them and a followed discussion to the others; `nil` where the caller didn't say, and then a reply stays one
+  defp by_experience(recipients, activity, wrote_above \\ nil),
+    do:
+      Enum.group_by(recipients, fn {user, _feed} ->
+        experienced_as(activity, user,
+          wrote_above: if(is_list(wrote_above), do: Enums.id(user) in wrote_above)
+        )
+      end)
 
   # the account of everyone who left this kind to the email digest gets its digest queued, once per account however many of its personas this reached, covering from this notification. Only where email is sent at all
   defp queue_digests(by_experience, activity) do
@@ -143,11 +173,11 @@ defmodule Bonfire.Notify.FanOut do
   end
 
   # asked rather than called, since this extension doesn't depend on `bonfire_social`. Without it there is nothing to deliver anyway, and a nil reads as "nothing in particular", which the catch-all switch answers for
-  defp experienced_as(activity, user) do
+  defp experienced_as(activity, user, opts) do
     Bonfire.Common.Utils.maybe_apply(
       Bonfire.Social.Activities,
       :experienced_as,
-      [activity, user],
+      [activity, user, opts],
       fallback_return: nil
     )
   end
@@ -172,6 +202,47 @@ defmodule Bonfire.Notify.FanOut do
       }
     end)
   end
+
+  # a notification row is written with the post, before its boundary exists to check, so someone who can't read it may have one: it goes, in one delete, and any page it was pushed to is told to hide it. Only when someone was dropped, so nothing for a post everyone may read
+  defp remove_from_unseeing(resolved, seeing, activity) do
+    seeing_ids = MapSet.new(seeing, fn {user, _feed} -> Enums.id(user) end)
+
+    case resolved
+         |> Enum.reject(fn {user, _feed} -> MapSet.member?(seeing_ids, Enums.id(user)) end)
+         |> Enum.map(&feed_id_of/1)
+         |> Enum.reject(&is_nil/1) do
+      [] ->
+        nil
+
+      feed_ids ->
+        activity_id = Types.uid(activity)
+
+        from(fp in Bonfire.Data.Social.FeedPublish,
+          where: fp.id == ^activity_id and fp.feed_id in ^feed_ids
+        )
+        |> repo().delete_all()
+
+        Bonfire.Common.Utils.maybe_apply(Bonfire.Social.LivePush, :hide_live, [
+          feed_ids,
+          activity_id
+        ])
+    end
+  end
+
+  # one more unseen item for each who is still to be told, in the box it reached them in (`Bonfire.Social.LivePush` does it when this extension isn't installed)
+  defp bump_counters(recipients) do
+    recipients
+    |> Enum.group_by(fn {_user, feed} -> feed end, &feed_id_of/1)
+    |> Enum.each(fn {box, feed_ids} ->
+      Bonfire.Common.Utils.maybe_apply(Bonfire.Social.LivePush, :increment_counters, [
+        Enum.reject(feed_ids, &is_nil/1),
+        box
+      ])
+    end)
+  end
+
+  defp feed_id_of({user, :inbox}), do: e(user, :character, :inbox_id, nil)
+  defp feed_id_of({user, _notifications}), do: e(user, :character, :notifications_id, nil)
 
   defp reject_cannot_see(recipients, nil) do
     warn(recipients, "No object to check the boundary of, so notifying nobody")

@@ -41,8 +41,8 @@ defmodule Bonfire.Notify.Web.MastoStreamingWebSocket do
 
   @heartbeat_interval_ms 30_000
 
-  # Notification types that include a status object per Mastodon spec
-  @notification_types_with_status ~w(mention status reblog favourite poll update)
+  # replaced by `Bonfire.API.MastoCompat.Schemas.Notification.with_status?/1`, the one list beside Mastodon's type names, which this one had drifted from (no `quote` or `quoted_update`)
+  # @notification_types_with_status ~w(mention status reblog favourite poll update)
 
   # --- Transport callbacks ---
 
@@ -443,8 +443,15 @@ defmodule Bonfire.Notify.Web.MastoStreamingWebSocket do
   defp emit_notification_and_maybe_update(stream_name, activity, state, acc) do
     stream_arr = to_stream_array(stream_name)
 
+    # named once, as the notification list and push name it, for both events
+    notification_type =
+      Bonfire.API.MastoCompat.Mappers.Notification.type_for(activity, state.user)
+
     acc =
-      case EventFormatter.format_notification(activity, current_user: state.user) do
+      case EventFormatter.format_notification(activity,
+             current_user: state.user,
+             notification_type: notification_type
+           ) do
         {:ok, payload} ->
           frame = EventFormatter.to_ws_frame(stream_arr, "notification", payload)
           [frame | acc]
@@ -453,11 +460,9 @@ defmodule Bonfire.Notify.Web.MastoStreamingWebSocket do
           acc
       end
 
-    # Per Mastodon spec: user stream also emits update events when the notification
-    # type includes a status (mention, reblog, favourite, poll, status, update)
-    notification_type = detect_notification_type(activity)
-
-    if notification_type in @notification_types_with_status do
+    # Per Mastodon spec: user stream also emits update events when the notification type includes a status
+    if notification_type &&
+         Bonfire.API.MastoCompat.Schemas.Notification.with_status?(notification_type) do
       case EventFormatter.format_update(activity, current_user: state.user) do
         {:ok, payload} ->
           frame = EventFormatter.to_ws_frame(stream_arr, "update", payload)
@@ -471,21 +476,22 @@ defmodule Bonfire.Notify.Web.MastoStreamingWebSocket do
     end
   end
 
-  defp detect_notification_type(activity) do
-    if Code.ensure_loaded?(Bonfire.API.MastoCompat.Mappers.Notification) do
-      verb_id = get_verb_id(activity)
-      Bonfire.API.MastoCompat.Mappers.Notification.map_verb_to_type(verb_id)
-    else
-      nil
-    end
-  rescue
-    _ -> nil
-  end
-
-  defp get_verb_id(%{verb: %{verb: verb_id}}) when is_binary(verb_id), do: verb_id
-  defp get_verb_id(%{verb_id: verb_id}) when is_binary(verb_id), do: verb_id
-  defp get_verb_id(%{verb: verb_id}) when is_binary(verb_id), do: verb_id
-  defp get_verb_id(_), do: nil
+  # replaced by `Mappers.Notification.type_for/2`, named once per activity for both events: this one named from the verb alone, without the reader or the mentions, so a create or a reply was always nil and a mention never got its `update` event
+  # defp detect_notification_type(activity) do
+  #   if Code.ensure_loaded?(Bonfire.API.MastoCompat.Mappers.Notification) do
+  #     verb_id = get_verb_id(activity)
+  #     Bonfire.API.MastoCompat.Mappers.Notification.map_verb_to_type(verb_id)
+  #   else
+  #     nil
+  #   end
+  # rescue
+  #   _ -> nil
+  # end
+  #
+  # defp get_verb_id(%{verb: %{verb: verb_id}}) when is_binary(verb_id), do: verb_id
+  # defp get_verb_id(%{verb_id: verb_id}) when is_binary(verb_id), do: verb_id
+  # defp get_verb_id(%{verb: verb_id}) when is_binary(verb_id), do: verb_id
+  # defp get_verb_id(_), do: nil
 
   @doc """
   Convert a subscription key to the Mastodon stream array format.

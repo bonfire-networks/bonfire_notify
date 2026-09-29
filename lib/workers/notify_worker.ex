@@ -60,7 +60,9 @@ defmodule Bonfire.Notify.Worker do
             "feed" => to_string(e(recipient, :feed, :notifications))
           }
         end),
-      "feed_ids" => e(notifying, :feeds, [])
+      "feed_ids" => e(notifying, :feeds, []),
+      # who of them wrote the post they follow a discussion by, so a reply is Replies to them and a followed discussion to the others (`FanOut`). Absent where the write path didn't say, and then a reply stays one
+      "wrote_above" => e(notifying, :wrote_above, nil)
     }
     |> new()
     |> Bonfire.Common.TestInstanceRepo.oban_insert()
@@ -110,7 +112,8 @@ defmodule Bonfire.Notify.Worker do
         # the same function a caller runs inline, so queueing changes when the work happens and nothing about what it does
         Bonfire.Notify.FanOut.notify(activity, %{
           recipients: e(args, "recipients", []),
-          feeds: e(args, "feed_ids", [])
+          feeds: e(args, "feed_ids", []),
+          wrote_above: e(args, "wrote_above", nil)
         })
         |> case do
           {:ok, _} -> :ok

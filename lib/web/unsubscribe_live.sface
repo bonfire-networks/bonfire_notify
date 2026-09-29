@@ -1,0 +1,33 @@
+<div data-role="unsubscribe_confirm" class="flex flex-col gap-3">
+  <p class="text-sm text-base-content/70">{l("Stop notifications you turned on, or that your posts and comments turned on for you.")}</p>
+
+  <button
+    type="button"
+    data-role="unsubscribe_followed"
+    phx-click="unsubscribe"
+    phx-value-which="followed"
+    phx-target={@myself}
+    disabled={@followed_count == 0}
+    class="btn btn-sm justify-between"
+  >
+    <span>{l("From people, groups, posts and comments you follow")}</span>
+    <span class="badge badge-sm tabular-nums">{@followed_count}</span>
+  </button>
+
+  <button
+    type="button"
+    data-role="unsubscribe_all"
+    phx-click="unsubscribe"
+    phx-value-which="all"
+    phx-target={@myself}
+    disabled={@all_count == 0}
+    class="btn btn-sm btn-error btn-outline justify-between"
+  >
+    <span>{l("From everything, your own posts and comments included")}</span>
+    <span class="badge badge-sm tabular-nums">{@all_count}</span>
+  </button>
+
+  <p :if={@all_count > @followed_count} class="text-xs text-base-content/60">
+    {l("Replies to your own posts and comments will then only notify you when they mention you.")}
+  </p>
+</div>

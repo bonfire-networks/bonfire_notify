@@ -312,25 +312,22 @@ defmodule Bonfire.Notify.API.MastoPushAdapter do
   def alert_key(verb) when is_binary(verb),
     do: alert_key(Bonfire.Common.Types.maybe_to_atom!(verb))
 
-  # what a notification category claims is named as the notification list names it, from the categories' `masto:`, so a client is pushed the same type it then fetches. `alert_keys` names only what no category claims
+  # named as the notification list names it, from the categories' `masto:` and, for what no category claims, the `masto_unclaimed` beside them, so a client is pushed the same type it then fetches
   def alert_key(verb) when is_atom(verb) and not is_nil(verb) do
-    if Bonfire.Social.Notifications.category_for(verb) do
-      verb
-      |> Bonfire.Social.Notifications.masto_type_for()
-      |> Bonfire.API.MastoCompat.Schemas.Notification.type_name()
-    else
-      Map.get(alert_keys(), verb)
-    end
+    verb
+    |> Bonfire.Social.Notifications.masto_type_for()
+    |> Bonfire.API.MastoCompat.Schemas.Notification.type_name()
   end
 
   def alert_key(_), do: nil
 
-  defp alert_keys do
-    Config.get([__MODULE__, :alert_keys], %{},
-      name: l("Mastodon notification types"),
-      description: l("What each kind of notification is called in Mastodon's API.")
-    )
-  end
+  # replaced by `Notifications.masto_type_for/1`'s `masto_unclaimed`, which the list and streaming read too, so the unclaimed kinds aren't named twice
+  # defp alert_keys do
+  #   Config.get([__MODULE__, :alert_keys], %{},
+  #     name: l("Mastodon notification types"),
+  #     description: l("What each kind of notification is called in Mastodon's API.")
+  #   )
+  # end
 
   # every documented type has to be present in a response, so the one place a default is legitimate is here: the API says each defaults to false, and a key we leave out is a key a client cannot display. Only this module builds this shape
   defp response_alerts(stored) do

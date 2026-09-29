@@ -182,8 +182,8 @@ defmodule Bonfire.Notify.API.MastoPushPayloadTest do
     subscribe_ours(bob, "https://push.bonfire.local/our-app")
     subscribe_masto(alice, "https://push.bonfire.local/masto-app")
 
-    # what Mastodon calls each of our verbs is a config table, so a verb missing from it is one Mastodon has no name for: its payload could not say which `notification_type` it is, and a client has no way to render it
-    Process.put([:bonfire_notify, Bonfire.Notify.API.MastoPushAdapter, :alert_keys], %{})
+    # what Mastodon calls a kind no category claims is a config table, so a kind missing from it is one Mastodon has no name for: its payload could not say which `notification_type` it is, and a client has no way to render it. The post here is a `write`, which no category claims
+    Process.put([:bonfire_social, Bonfire.Social.Notifications, :masto_unclaimed], %{})
 
     jobs = fan_out(post, [alice, bob])
 
@@ -221,9 +221,16 @@ defmodule Bonfire.Notify.API.MastoPushPayloadTest do
 
   # a client is told about something by push, then fetches it from the list, so both must call it the same, and the list's name for it is what the categories declare
   test "a push names each kind of notification as the notification list does" do
-    disagreements =
+    claimed =
       for {key, _category} <- Bonfire.Social.Notifications.categories(),
-          experience <- Bonfire.Social.Notifications.experiences_for(key) do
+          experience <- Bonfire.Social.Notifications.experiences_for(key),
+          do: experience
+
+    # and what no category claims, which the list names too
+    unclaimed = [:create, :write, :broadcast, :edit]
+
+    disagreements =
+      for experience <- claimed ++ unclaimed do
         list_type =
           experience
           |> Bonfire.Social.Notifications.masto_type_for()

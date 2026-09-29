@@ -567,6 +567,99 @@ defmodule Bonfire.Notify.Web.MastoStreamingWebSocketTest do
     end
   end
 
+  # a client is told about something on the stream, then fetches it from the list, so both must call it the same, and carry its status alike
+  describe "the user stream names a notification as the notification list does" do
+    setup %{token: token} do
+      {:ok, state} = init_ws(token)
+
+      {:ok, state} =
+        WS.handle_in(
+          {Jason.encode!(%{"type" => "subscribe", "stream" => "user"}), [opcode: :text]},
+          state
+        )
+
+      {:ok, state: state, other: Fake.fake_user!(Fake.fake_account!())}
+    end
+
+    test "a reply to my post that doesn't name me is a status, with its update", context do
+      {:ok, post} =
+        Bonfire.Posts.publish(
+          current_user: context.me,
+          post_attrs: %{post_content: %{html_body: "<p>my own post</p>"}},
+          boundary: "public"
+        )
+
+      {:ok, reply} =
+        Bonfire.Posts.publish(
+          current_user: context.other,
+          post_attrs: %{post_content: %{html_body: "<p>answering you</p>"}, reply_to_id: post.id},
+          boundary: "public"
+        )
+
+      frames = streamed_notification(context, reply)
+
+      assert %{"type" => "status"} = notification_in(frames)
+      assert "update" in events_in(frames)
+    end
+
+    test "a post naming me is a mention, with its update", context do
+      {:ok, post} =
+        Bonfire.Posts.publish(
+          current_user: context.other,
+          post_attrs: %{
+            post_content: %{html_body: "@#{context.me.character.username} hello"}
+          },
+          boundary: "public"
+        )
+
+      frames = streamed_notification(context, post)
+
+      assert %{"type" => "mention"} = notification_in(frames)
+      assert "update" in events_in(frames)
+    end
+
+    test "a post from someone with a bell on is a status, not a mention", context do
+      {:ok, _} = Bonfire.Notify.Bells.enable(context.me, context.other)
+
+      {:ok, post} =
+        Bonfire.Posts.publish(
+          current_user: context.other,
+          post_attrs: %{post_content: %{html_body: "<p>news for whoever asked</p>"}},
+          boundary: "public"
+        )
+
+      frames = streamed_notification(context, post)
+
+      assert %{"type" => "status"} = notification_in(frames)
+      assert "update" in events_in(frames)
+    end
+
+    test "a quote request is a quote, with the quoting status", context do
+      {:ok, original} =
+        Bonfire.Posts.publish(
+          current_user: context.me,
+          post_attrs: %{post_content: %{html_body: "<p>being quoted</p>"}},
+          boundary: "public"
+        )
+
+      {:ok, quote_post} =
+        Bonfire.Posts.publish(
+          current_user: context.other,
+          post_attrs: %{post_content: %{html_body: "<p>quoting you</p>"}},
+          boundary: "public"
+        )
+
+      assert [_request] =
+               Bonfire.Social.Quotes.create_quote_requests(context.other, [original], quote_post)
+
+      # the request's object is the post being quoted, and the quoting post its subject
+      frames = streamed_notification(context, original)
+
+      assert %{"type" => "quote", "status" => %{"id" => quote_id}} = notification_in(frames)
+      assert quote_id == quote_post.id
+    end
+  end
+
   # --- PubSub integration tests (timing-dependent, lenient) ---
 
   describe "handle_info PubSub integration" do
@@ -1014,6 +1107,45 @@ defmodule Bonfire.Notify.Web.MastoStreamingWebSocketTest do
 
   # Load an activity from DB with associations needed by Mastodon mappers.
   # Accepts the return value of publish/like/follow/etc.
+  # the activity as the reader's notifications feed holds it, broadcast by the live push to their notifications feed as the write path does, and the broadcast this process receives (it subscribed as the socket) handed to the socket
+  defp streamed_notification(%{me: me, state: state}, object) do
+    activity =
+      Bonfire.Social.FeedLoader.feed_contains?(:notifications, object,
+        current_user: me,
+        return_match_fun: & &1.activity
+      )
+
+    assert activity, "the positive first: it is in the reader's notifications"
+
+    Bonfire.Social.LivePush.emit_live(activity, [state.notification_feed_id], notify: true)
+
+    activity.id
+    |> broadcast_of()
+    |> WS.handle_info(state)
+    |> collect_all_frames()
+  end
+
+  # the fixtures' own publishing broadcasts to the socket's feeds too, so wait for this activity's
+  defp broadcast_of(activity_id) do
+    receive do
+      {{Bonfire.Social.Feeds, :new_activity}, data} = broadcast ->
+        if Bonfire.Common.Enums.id(data[:activity]) == activity_id,
+          do: broadcast,
+          else: broadcast_of(activity_id)
+    after
+      1_000 -> flunk("no broadcast of #{activity_id}")
+    end
+  end
+
+  defp events_in(frames), do: Enum.map(frames, & &1["event"])
+
+  defp notification_in(frames) do
+    case Enum.find(frames, &(&1["event"] == "notification")) do
+      %{"payload" => payload} -> Jason.decode!(payload)
+      nil -> flunk("no notification event, got: #{inspect(events_in(frames))}")
+    end
+  end
+
   defp load_activity_for({:ok, object}), do: load_activity_for(object)
 
   # the streaming socket receives its activities from PubSub, already prepared for rendering by the live push, so preparing them the same way keeps this a test of the formatter. A hand-written preload list is also wrong per verb: a follow's object is a User, which has no `post_content` and nothing tagged

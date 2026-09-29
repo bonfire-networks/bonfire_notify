@@ -123,6 +123,144 @@ defmodule Bonfire.Notify.BellsTest do
     end
   end
 
+  # a bell on any post covers the replies below it, however deep, so a branch of a thread can be followed on its own
+  describe "on a comment" do
+    test "with notifications on for it, a reply below it notifies, and a reply elsewhere in the thread doesn't",
+         %{author: author, reader: reader} do
+      root = publish(author, "a thread")
+      comment = publish(fake_user!(), "a comment worth following", reply_to_id: root.id)
+      {:ok, _} = Bells.enable(reader, comment)
+
+      below = publish(fake_user!(), "answering the comment", reply_to_id: comment.id)
+      deeper = publish(fake_user!(), "answering that", reply_to_id: below.id)
+      elsewhere = publish(fake_user!(), "answering the thread", reply_to_id: root.id)
+
+      assert notified?(reader, below)
+      assert notified?(reader, deeper)
+      refute notified?(reader, elsewhere)
+    end
+  end
+
+  # what you write enables notifications of the replies below it, even when you're not mentioned, and you can turn that off for one post
+  describe "your own posts" do
+    test "a new post enables notifications of its replies", %{author: author} do
+      post = publish(author, "my post")
+
+      assert Bells.enabled?(author, post)
+    end
+
+    test "a comment enables notifications of its replies", %{author: author} do
+      root = publish(fake_user!(), "someone else's thread")
+      comment = publish(author, "my comment", reply_to_id: root.id)
+
+      assert Bells.enabled?(author, comment)
+    end
+
+    test "a comment below a post you already get notifications for enables none, since that one covers it",
+         %{author: author} do
+      root = publish(author, "my thread")
+      comment = publish(author, "my comment in it", reply_to_id: root.id)
+
+      # the positive first: the thread's first post enabled them
+      assert Bells.enabled?(author, root)
+      refute Bells.enabled?(author, comment)
+    end
+
+    test "with the switch off, nothing is enabled", %{author: author} do
+      author =
+        Bonfire.Common.Utils.current_user(
+          Bonfire.Common.Settings.put([:notifications, :notify_any_replies], false,
+            current_user: author
+          )
+        )
+
+      refute Bells.enabled?(author, publish(author, "my quiet post"))
+    end
+
+    test "a reply further down notifies whoever wrote a post above it", %{author: author} do
+      root = publish(author, "my thread")
+      first = publish(fake_user!(), "a first reply", reply_to_id: root.id)
+      deeper = publish(fake_user!(), "a reply to the reply", reply_to_id: first.id)
+
+      assert notified?(author, deeper)
+    end
+
+    test "turning a post's notifications off stops even its direct replies", %{author: author} do
+      # the positive first: with them on, a direct reply notifies
+      followed = publish(author, "a post I still follow")
+      assert notified?(author, publish(fake_user!(), "a reply", reply_to_id: followed.id))
+
+      silenced = publish(author, "a post I stopped following")
+      Bells.disable(author, silenced)
+
+      refute notified?(author, publish(fake_user!(), "a reply", reply_to_id: silenced.id))
+    end
+
+    test "who follows a discussion by a post they wrote is told apart from who only follows it",
+         %{author: author, reader: reader} do
+      root = publish(author, "my thread")
+      {:ok, _} = Bells.enable(reader, root)
+
+      subscribers = Bells.subscribers([root.id], fake_user!(), authorship: true)
+
+      assert {_, true} = Enum.find(subscribers, fn {s, _} -> s.id == author.id end)
+      assert {_, false} = Enum.find(subscribers, fn {s, _} -> s.id == reader.id end)
+    end
+
+    test "a reply that mentions you notifies you, even with the post's notifications off", %{
+      author: author
+    } do
+      post = publish(author, "a post I stopped following")
+      Bells.disable(author, post)
+
+      mention =
+        publish(fake_user!(), "@#{author.character.username} still, about this",
+          reply_to_id: post.id
+        )
+
+      assert notified?(author, mention)
+    end
+  end
+
+  # "Unsubscribe from all" means all, your own posts' included; "from what I follow" leaves what you wrote alone
+  describe "unsubscribing in bulk" do
+    setup %{author: author, reader: reader} do
+      mine = publish(reader, "my own post")
+      theirs = publish(author, "their post")
+      {:ok, _} = Bells.enable(reader, theirs)
+      {:ok, _} = Bells.enable(reader, author)
+
+      {:ok, mine: mine, theirs: theirs}
+    end
+
+    test "counts all of them, or only what you follow", %{reader: reader} do
+      # your own post, their post, and them
+      assert Bells.count(reader, :all) == 3
+      assert Bells.count(reader, :followed) == 2
+    end
+
+    test "from what you follow leaves your own posts' notifications on", %{
+      reader: reader,
+      author: author,
+      mine: mine,
+      theirs: theirs
+    } do
+      Bells.disable_all(reader, :followed)
+
+      assert Bells.enabled?(reader, mine)
+      refute Bells.enabled?(reader, theirs)
+      refute Bells.enabled?(reader, author)
+    end
+
+    test "from all turns them all off", %{reader: reader, mine: mine, theirs: theirs} do
+      Bells.disable_all(reader, :all)
+
+      refute Bells.enabled?(reader, mine)
+      refute Bells.enabled?(reader, theirs)
+      assert Bells.count(reader, :all) == 0
+    end
+  end
+
   describe "on a group" do
     # a public group whose posts anyone may read, so what is being tested is the bell and not the group's boundaries
     setup %{author: author} do

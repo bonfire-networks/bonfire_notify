@@ -44,37 +44,57 @@ defmodule Bonfire.Notify.MastoStreaming.EventFormatter do
   Returns `{:ok, json_string}` or `:skip` if the activity can't be mapped.
   """
   def format_notification(activity, opts \\ []) do
-    notification_type = detect_notification_type(activity)
+    notification_type =
+      opts[:notification_type] || Mappers.Notification.type_for(activity, opts[:current_user])
 
-    if notification_type do
-      subject = e(activity, :subject, nil)
+    # built by the mapper the notification list uses, so a streamed notification carries what a fetched one does, including what is particular to a kind (a quote's status is the quoting post, and its account that post's author)
+    notification =
+      notification_type &&
+        Mappers.Notification.from_activity(
+          activity,
+          Keyword.merge(opts, notification_type: notification_type, lightweight: true)
+        )
 
-      account =
-        Mappers.Account.from_user(subject, skip_expensive_stats: true)
-        |> Helpers.deep_struct_to_map(filter_nils: true, drop_unknown_structs: true)
+    case notification do
+      %{} = notification ->
+        {:ok,
+         notification
+         |> Helpers.deep_struct_to_map(filter_nils: true, drop_unknown_structs: true)
+         |> Jason.encode!()}
 
-      notification = %{
-        "id" => to_string(id(activity)),
-        "type" => notification_type,
-        "created_at" => format_datetime(e(activity, :created_at, nil) || DateTime.utc_now()),
-        "account" => account
-      }
-
-      # Add status inline for notification types that include one (no encode→decode round-trip)
-      notification =
-        if notification_type in ~w(mention status reblog favourite poll update) do
-          case lightweight_status_map(activity, opts) do
-            nil -> notification
-            status -> Map.put(notification, "status", status)
-          end
-        else
-          notification
-        end
-
-      {:ok, Jason.encode!(notification)}
-    else
-      :skip
+      _ ->
+        :skip
     end
+
+    # replaced by `Mappers.Notification.from_activity/2` above, which the list uses too: this built its own, which had no account for an activity whose subject isn't a person (a quote request's is the quoting post) and took every status from the activity's own object
+    # if notification_type do
+    #   subject = e(activity, :subject, nil)
+    #
+    #   account =
+    #     Mappers.Account.from_user(subject, skip_expensive_stats: true)
+    #     |> Helpers.deep_struct_to_map(filter_nils: true, drop_unknown_structs: true)
+    #
+    #   notification = %{
+    #     "id" => to_string(id(activity)),
+    #     "type" => notification_type,
+    #     "created_at" => format_datetime(e(activity, :created_at, nil) || DateTime.utc_now()),
+    #     "account" => account
+    #   }
+    #
+    #   notification =
+    #     if Bonfire.API.MastoCompat.Schemas.Notification.with_status?(notification_type) do
+    #       case lightweight_status_map(activity, opts) do
+    #         nil -> notification
+    #         status -> Map.put(notification, "status", status)
+    #       end
+    #     else
+    #       notification
+    #     end
+    #
+    #   {:ok, Jason.encode!(notification)}
+    # else
+    #   :skip
+    # end
   rescue
     e ->
       error(e, "EventFormatter.format_notification failed")
@@ -166,32 +186,34 @@ defmodule Bonfire.Notify.MastoStreaming.EventFormatter do
 
   # --- Private helpers ---
 
-  defp detect_notification_type(activity) do
-    verb = e(activity, :verb, :verb, nil) || e(activity, :verb_id, nil)
-    like_id = Bonfire.Boundaries.Verbs.get_id!(:like)
-    boost_id = Bonfire.Boundaries.Verbs.get_id!(:boost)
-    follow_id = Bonfire.Boundaries.Verbs.get_id!(:follow)
-    create_id = Bonfire.Boundaries.Verbs.get_id!(:create)
+  # replaced by `Mappers.Notification.type_for/2`, which names it as the notification list and push do: a verb table of its own, where every create was a `mention` (so a bell post streamed as one) and replies, asks and reports never streamed
+  # defp detect_notification_type(activity) do
+  #   verb = e(activity, :verb, :verb, nil) || e(activity, :verb_id, nil)
+  #   like_id = Bonfire.Boundaries.Verbs.get_id!(:like)
+  #   boost_id = Bonfire.Boundaries.Verbs.get_id!(:boost)
+  #   follow_id = Bonfire.Boundaries.Verbs.get_id!(:follow)
+  #   create_id = Bonfire.Boundaries.Verbs.get_id!(:create)
+  #
+  #   cond do
+  #     verb in ["Like", like_id] -> "favourite"
+  #     verb in ["Boost", "Announce", boost_id] -> "reblog"
+  #     verb in ["Follow", follow_id] -> "follow"
+  #     verb in ["Create", create_id] -> "mention"
+  #     true -> nil
+  #   end
+  # end
 
-    cond do
-      verb in ["Like", like_id] -> "favourite"
-      verb in ["Boost", "Announce", boost_id] -> "reblog"
-      verb in ["Follow", follow_id] -> "follow"
-      verb in ["Create", create_id] -> "mention"
-      true -> nil
-    end
-  end
-
-  defp format_datetime(%DateTime{} = dt) do
-    DateTime.to_iso8601(dt)
-  end
-
-  defp format_datetime(%NaiveDateTime{} = ndt) do
-    ndt
-    |> DateTime.from_naive!("Etc/UTC")
-    |> DateTime.to_iso8601()
-  end
-
-  defp format_datetime(str) when is_binary(str), do: str
-  defp format_datetime(_), do: DateTime.utc_now() |> DateTime.to_iso8601()
+  # only the notification this module used to build read it: `Mappers.Notification.from_activity/2` dates it now
+  # defp format_datetime(%DateTime{} = dt) do
+  #   DateTime.to_iso8601(dt)
+  # end
+  #
+  # defp format_datetime(%NaiveDateTime{} = ndt) do
+  #   ndt
+  #   |> DateTime.from_naive!("Etc/UTC")
+  #   |> DateTime.to_iso8601()
+  # end
+  #
+  # defp format_datetime(str) when is_binary(str), do: str
+  # defp format_datetime(_), do: DateTime.utc_now() |> DateTime.to_iso8601()
 end

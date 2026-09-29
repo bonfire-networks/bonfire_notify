@@ -61,6 +61,38 @@ defmodule Bonfire.Notify.BellButtonTest do
     assert Bells.enabled?(reader, author)
   end
 
+  # asked only when that post's menu is opened, so a page of posts asks nothing up front
+  test "a post's menu has a bell for the replies below it, which asks only once the menu is opened",
+       %{conn: conn, reader: reader, author: author} do
+    {:ok, post} =
+      Bonfire.Posts.publish(
+        current_user: author,
+        post_attrs: %{post_content: %{html_body: "a post with a menu"}},
+        boundary: "public"
+      )
+
+    {:ok, view, _html} = live(conn, "/post/#{post.id}")
+    render_async(view)
+
+    # the positive first: the item is there, waiting to be asked
+    assert has_element?(view, "[data-role=bell_menu_item]")
+    refute has_element?(view, "[data-role=bell_menu_item] button")
+
+    view |> element("[data-id=more_menu] [id$=_trigger]") |> render_click()
+
+    assert has_element?(view, "[data-role=bell_menu_item] button", "Notify me about replies")
+
+    view |> element("[data-role=bell_menu_item] button") |> render_click()
+
+    assert has_element?(
+             view,
+             "[data-role=bell_menu_item] button",
+             "Stop notifying me about replies"
+           )
+
+    assert Bells.enabled?(reader, post)
+  end
+
   test "a thread has a bell for its replies, off until you press it", %{
     conn: conn,
     reader: reader,
@@ -105,4 +137,64 @@ defmodule Bonfire.Notify.BellButtonTest do
   # TODO: a remote group has no bell until you join it, as a remote person's until you follow them (needs remote fixtures)
 
   # TODO: a remote person's profile has no bell until you follow them, since their posts only reach us through a follow (needs a remote user fixture)
+
+  # one button in the notification preferences panel, opening a modal that only counts once opened, with a choice for each: what you follow, or everything
+  describe "unsubscribing in bulk from the preferences panel" do
+    setup %{reader: reader, author: author} do
+      {:ok, mine} =
+        Bonfire.Posts.publish(
+          current_user: reader,
+          post_attrs: %{post_content: %{html_body: "my own post"}},
+          boundary: "public"
+        )
+
+      {:ok, theirs} =
+        Bonfire.Posts.publish(
+          current_user: author,
+          post_attrs: %{post_content: %{html_body: "their post"}},
+          boundary: "public"
+        )
+
+      {:ok, _} = Bells.enable(reader, theirs)
+      {:ok, _} = Bells.enable(reader, author)
+
+      {:ok, mine: mine}
+    end
+
+    test "from what you follow: counts when opened, and leaves your own posts' on", %{
+      conn: conn,
+      reader: reader,
+      mine: mine
+    } do
+      {:ok, view, _html} = live(conn, "/notifications")
+      render_async(view)
+
+      refute has_element?(view, "[data-role=unsubscribe_confirm]")
+
+      view |> element("#notification-unsubscribe [data-role=open_modal]") |> render_click()
+
+      # their post and them
+      assert has_element?(view, "[data-role=unsubscribe_followed]", "2")
+
+      view |> element("[data-role=unsubscribe_followed]") |> render_click()
+
+      assert Bells.count(reader, :followed) == 0
+      assert Bells.enabled?(reader, mine)
+    end
+
+    test "from all: turns off your own posts' too", %{conn: conn, reader: reader, mine: mine} do
+      {:ok, view, _html} = live(conn, "/notifications")
+      render_async(view)
+
+      view |> element("#notification-unsubscribe [data-role=open_modal]") |> render_click()
+
+      # my post, their post, and them
+      assert has_element?(view, "[data-role=unsubscribe_all]", "3")
+
+      view |> element("[data-role=unsubscribe_all]") |> render_click()
+
+      assert Bells.count(reader, :all) == 0
+      refute Bells.enabled?(reader, mine)
+    end
+  end
 end

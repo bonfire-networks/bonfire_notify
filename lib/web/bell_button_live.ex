@@ -20,6 +20,15 @@ defmodule Bonfire.Notify.Web.BellButtonLive do
   prop label, :string, default: nil
   prop label_enabled, :string, default: nil
 
+  @doc "A caveat the tooltip adds after the label, for example that only replies reaching this server are covered."
+  prop hint, :string, default: nil
+
+  @doc "Ask whether it's on only when told to (a `load` event, pushed by the menu it sits in when that opens), rather than when rendered, so a page of posts asks nothing up front."
+  prop lazy, :boolean, default: false
+
+  @doc "Render as a row in a menu rather than as a round button."
+  prop menu_item, :boolean, default: false
+
   @doc "Optional button classes for callers that need the bell to match a surrounding action group."
   prop button_class, :css_class, default: nil
 
@@ -30,15 +39,16 @@ defmodule Bonfire.Notify.Web.BellButtonLive do
     socket = assign(socket, assigns)
 
     {:ok,
-     case e(assigns(socket), :enabled, nil) do
-       nil ->
-         user = current_user(socket)
-         object = e(assigns(socket), :object, nil)
-         assign(socket, enabled: not is_nil(user) and Bells.enabled?(user, object))
+     if(is_nil(e(assigns(socket), :enabled, nil)) and !e(assigns(socket), :lazy, false),
+       do: assign_enabled(socket),
+       else: socket
+     )}
+  end
 
-       _known ->
-         socket
-     end}
+  # the menu it sits in was opened: ask now, once
+  def handle_event("load", _params, socket) do
+    {:noreply,
+     if(is_nil(e(assigns(socket), :enabled, nil)), do: assign_enabled(socket), else: socket)}
   end
 
   def handle_event("toggle", _params, socket) do
@@ -58,5 +68,11 @@ defmodule Bonfire.Notify.Web.BellButtonLive do
           {:noreply, assign_error(socket, l("Could not turn on notifications for their posts"))}
       end
     end
+  end
+
+  defp assign_enabled(socket) do
+    user = current_user(socket)
+    object = e(assigns(socket), :object, nil)
+    assign(socket, enabled: not is_nil(user) and Bells.enabled?(user, object))
   end
 end
