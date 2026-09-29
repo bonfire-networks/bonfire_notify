@@ -255,6 +255,86 @@ defmodule Bonfire.Notify.FanOutTest do
              "alice was created just now, so she's new to this server"
     end
 
+    # the same switches hide direct messages: a message reaches its recipient through their inbox, and is dropped from delivery by the same audience conditions as a notification
+    test "a message from someone bob doesn't follow reaches none of his devices while he hides them",
+         %{alice: alice, bob: bob} do
+      configure_native_push()
+
+      {:ok, _} =
+        Bonfire.Notify.NativePush.register(bob, %{provider: "apns", token: "t-#{bob.id}"})
+
+      {:ok, message} =
+        Bonfire.Messages.send(alice, %{
+          to_circles: [bob.id],
+          post_content: %{html_body: "a message for bob"}
+        })
+
+      job = %{recipients: [%{"user_id" => bob.id}], feeds: [Feeds.feed_id(:inbox, bob)]}
+      activity = e(message, :activity, nil)
+
+      # the positive first: nothing hidden, the message reaches bob's phone
+      assert {:ok, %{deliveries: 1}} = FanOut.notify(activity, job)
+
+      Bonfire.Common.Settings.put(
+        Bonfire.Social.Notifications.audience_key(:not_followed),
+        :hide,
+        current_user: bob
+      )
+
+      assert {:ok, %{deliveries: 0}} = FanOut.notify(activity, job),
+             "bob doesn't follow alice and hides people he doesn't follow"
+
+      {:ok, _} = Bonfire.Social.Graph.Follows.follow(bob, alice)
+
+      assert {:ok, %{deliveries: 1}} = FanOut.notify(activity, job),
+             "once he follows her, her messages reach him again"
+    end
+
+    # a message tags whoever it's addressed to, so it's a mention: a stranger's first message is making contact, and their answer in a conversation bob started isn't
+    test "hiding strangers making contact stops a stranger's first message, not their reply to bob",
+         %{alice: alice, bob: bob} do
+      configure_native_push()
+
+      {:ok, _} =
+        Bonfire.Notify.NativePush.register(bob, %{provider: "apns", token: "t-#{bob.id}"})
+
+      {:ok, first} =
+        Bonfire.Messages.send(alice, %{
+          to_circles: [bob.id],
+          post_content: %{html_body: "hello bob, we haven't met"}
+        })
+
+      {:ok, bobs} =
+        Bonfire.Messages.send(bob, %{
+          to_circles: [alice.id],
+          post_content: %{html_body: "bob writes"}
+        })
+
+      {:ok, reply} =
+        Bonfire.Messages.send(alice, %{
+          to_circles: [bob.id],
+          post_content: %{html_body: "alice answers"},
+          reply_to_id: bobs.id
+        })
+
+      job = %{recipients: [%{"user_id" => bob.id}], feeds: [Feeds.feed_id(:inbox, bob)]}
+
+      # the positive first, for both
+      assert {:ok, %{deliveries: 1}} = FanOut.notify(e(first, :activity, nil), job)
+      assert {:ok, %{deliveries: 1}} = FanOut.notify(e(reply, :activity, nil), job)
+
+      Bonfire.Common.Settings.put(
+        Bonfire.Social.Notifications.audience_key(:not_followed_making_contact),
+        :hide,
+        current_user: bob
+      )
+
+      assert {:ok, %{deliveries: 0}} = FanOut.notify(e(first, :activity, nil), job)
+
+      assert {:ok, %{deliveries: 1}} = FanOut.notify(e(reply, :activity, nil), job),
+             "an answer in a conversation bob started isn't a stranger making contact"
+    end
+
     # a reply below something you wrote is Replies, and one in a discussion you only follow is Other, as the chips put them: the write path says which of the recipients wrote the post they follow it by (`wrote_above`)
     test "a reply in a discussion you only follow follows Other's Push switch, not Replies'", %{
       alice: alice,

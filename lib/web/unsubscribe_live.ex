@@ -32,7 +32,9 @@ defmodule Bonfire.Notify.Web.UnsubscribeLive do
        lp(
          "Stopped notifications from %{count} thing",
          "Stopped notifications from %{count} things",
-         count, count: count)
+         count,
+         count: count
+       )
      )}
   end
 
