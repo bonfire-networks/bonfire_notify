@@ -62,35 +62,52 @@ defmodule Bonfire.Notify.BellButtonTest do
   end
 
   # asked only when that post's menu is opened, so a page of posts asks nothing up front
-  test "a post's menu has a bell for the replies below it, which asks only once the menu is opened",
+  test "a reply's menu has a bell for the replies below it, which asks only once the menu is opened, while the thread's root leaves it to the page header",
        %{conn: conn, reader: reader, author: author} do
-    {:ok, post} =
+    {:ok, root} =
       Bonfire.Posts.publish(
         current_user: author,
         post_attrs: %{post_content: %{html_body: "a post with a menu"}},
         boundary: "public"
       )
 
-    {:ok, view, _html} = live(conn, "/post/#{post.id}")
+    {:ok, reply} =
+      Bonfire.Posts.publish(
+        current_user: author,
+        post_attrs: %{post_content: %{html_body: "a reply with a menu"}, reply_to_id: root.id},
+        boundary: "public"
+      )
+
+    {:ok, view, _html} = live(conn, "/post/#{root.id}")
     render_async(view)
 
-    # the positive first: the item is there, waiting to be asked
-    assert has_element?(view, "[data-role=bell_menu_item]")
-    refute has_element?(view, "[data-role=bell_menu_item] button")
+    reply_menu = "[data-object_id='#{reply.id}']"
 
-    view |> element("[data-id=more_menu] [id$=_trigger]") |> render_click()
+    # the positive first: the reply's item is there, waiting to be asked
+    assert has_element?(view, "#{reply_menu} [data-role=bell_menu_item]")
+    refute has_element?(view, "#{reply_menu} [data-role=bell_menu_item] button")
+    # the root has the header's bell instead
+    assert has_element?(view, "[data-object_id='#{root.id}'] [data-id=more_menu]")
+    refute has_element?(view, "[data-object_id='#{root.id}'] [data-role=bell_menu_item]")
+    assert has_element?(view, "[data-role=bell_button]", "Notify me about replies")
 
-    assert has_element?(view, "[data-role=bell_menu_item] button", "Notify me about replies")
-
-    view |> element("[data-role=bell_menu_item] button") |> render_click()
+    view |> element("#{reply_menu} [data-id=more_menu] [id$=_trigger]") |> render_click()
 
     assert has_element?(
              view,
-             "[data-role=bell_menu_item] button",
+             "#{reply_menu} [data-role=bell_menu_item] button",
+             "Notify me about replies"
+           )
+
+    view |> element("#{reply_menu} [data-role=bell_menu_item] button") |> render_click()
+
+    assert has_element?(
+             view,
+             "#{reply_menu} [data-role=bell_menu_item] button",
              "Stop notifying me about replies"
            )
 
-    assert Bells.enabled?(reader, post)
+    assert Bells.enabled?(reader, reply)
   end
 
   test "a thread has a bell for its replies, off until you press it", %{
