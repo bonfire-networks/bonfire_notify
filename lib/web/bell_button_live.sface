@@ -1,7 +1,7 @@
 <div
   id={@id}
   data-role={if @menu_item, do: "bell_menu_item", else: "bell_button"}
-  class={"flex": @menu_item}
+  class={flex: @menu_item}
 >
   {#case if @enabled,
       do: @label_enabled || l("Stop notifying me"),
