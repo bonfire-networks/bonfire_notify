@@ -131,19 +131,20 @@ defmodule Bonfire.Notify.WebPush do
         content,
         opts \\ []
       ) do
-    # shaped and serialised at the wire, because which shape this endpoint's client can read is known here and nowhere earlier
-    case Channel.payload_json(link, content) do
-      {:ok, payload} ->
-        device
-        |> WebPushDevice.to_ex_nudge_subscription(link.id)
-        |> ex_nudge_module().send_notification(
-          payload,
-          Keyword.take(opts, [:ttl, :urgency, :topic])
-        )
-        |> handle_delivery_result(device)
-
+    # the endpoint comes from the browser (or any client of the push API), and ExNudge sends with its own HTTP client, so check it here rather than relying on `Bonfire.Common.HTTP`'s guard
+    with :ok <- Bonfire.Common.HTTP.SSRF.check(device.address),
+         # shaped and serialised at the wire, because which shape this endpoint's client can read is known here and nowhere earlier
+         {:ok, payload} <- Channel.payload_json(link, content) do
+      device
+      |> WebPushDevice.to_ex_nudge_subscription(link.id)
+      |> ex_nudge_module().send_notification(
+        payload,
+        Keyword.take(opts, [:ttl, :urgency, :topic])
+      )
+      |> handle_delivery_result(device)
+    else
       {:error, reason} ->
-        # nothing this client could read, so there is nothing to retry
+        # an endpoint we must not send to, or nothing this client could read: either way there is nothing to retry
         {:cancel, reason}
     end
   end

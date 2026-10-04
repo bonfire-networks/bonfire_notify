@@ -53,6 +53,14 @@ defmodule Bonfire.Notify.WebPushChannelTest do
     assert Enum.all?(targets, &(&1.user_id == user.id))
   end
 
+  # the endpoint comes from the browser (or any client of the push API), so a notification must never be sent to a private address
+  test "nothing is sent to an endpoint on a private address", %{user: user} do
+    {:ok, link} = subscribe(user, "http://10.0.0.1/internal")
+
+    assert {:cancel, _} = deliver(user, link, :success)
+    refute_received {:web_push_sent, _, _, _}
+  end
+
   test "somebody with no subscription has no targets", %{other: other} do
     assert WebPush.targets([other.id]) == []
   end
