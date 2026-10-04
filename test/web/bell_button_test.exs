@@ -139,7 +139,7 @@ defmodule Bonfire.Notify.BellButtonTest do
     group =
       Bonfire.Classify.Simulate.fake_group!(author, %{
         membership: "open",
-        visibility: "global:discoverable"
+        visibility: "global"
       })
 
     conn
