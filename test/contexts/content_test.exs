@@ -63,6 +63,40 @@ defmodule Bonfire.Notify.ContentTest do
     assert opts[:urgency]
   end
 
+  # the link a feed row gives a reply, so a tapped notification opens its thread from the start, as clicking it in a feed does
+  test "a reply points at its place in the thread, as a feed links it", %{alice: alice} do
+    carl = fake_user!()
+    bob = fake_user!()
+    post = post!(alice, "the start of the thread")
+
+    {:ok, carls} =
+      Bonfire.Posts.publish(
+        current_user: carl,
+        post_attrs: %{post_content: %{html_body: "carl's reply"}, reply_to_id: post.id},
+        boundary: "public"
+      )
+
+    {:ok, bobs} =
+      Bonfire.Posts.publish(
+        current_user: bob,
+        post_attrs: %{post_content: %{html_body: "bob's reply to carl"}, reply_to_id: carls.id},
+        boundary: "public"
+      )
+
+    for activity <- [activity_of(bobs), activity_in_memory(bobs)] do
+      assert Content.for_delivery(activity).content.url ==
+               "/discussion/#{post.id}/reply/2/#{bobs.id}"
+    end
+
+    for activity <- [activity_of(carls), activity_in_memory(carls)] do
+      assert Content.for_delivery(activity).content.url ==
+               "/discussion/#{post.id}/reply/1/#{carls.id}"
+    end
+
+    # the start of a thread keeps its own page
+    assert Content.for_delivery(activity_of(post)).content.url == Bonfire.Common.URIs.path(post)
+  end
+
   test "says the same thing whether the activity arrived loaded or not", %{alice: alice} do
     post = post!(alice, "the same words either way")
 
