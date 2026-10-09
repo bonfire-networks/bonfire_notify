@@ -41,13 +41,15 @@
               if(@enabled, do: @button_class_enabled || @button_class, else: @button_class),
               "btn btn-sm btn-circle touch-target-expanded"
             ),
-            "tooltip",
-            "btn-primary": is_nil(@button_class) and @enabled,
-            "btn-ghost": is_nil(@button_class) and !@enabled
+            "tooltip"
           }
         >
           <span class="touch-target-hit-area" aria-hidden="true" />
-          <#Icon iconify={if @enabled, do: "ph:bell-ringing-fill", else: "ph:bell"} class="w-4 h-4" />
+          <#Icon iconify={if @enabled, do: "ph:bell-ringing-fill", else: "ph:bell"} class={
+            "w-4 h-4",
+            "text-primary": is_nil(@button_class) and @enabled,
+            "text-base-content": is_nil(@button_class) and !@enabled
+            } />
           <span class="sr-only">{text}</span>
         </button>
       {/if}
