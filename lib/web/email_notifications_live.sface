@@ -3,7 +3,7 @@
     <div class="divide-y divide-divider">
       <label class="flex items-center justify-between py-3 cursor-pointer group">
         <div class="flex items-center gap-3">
-          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-info/10 text-info">
+          <span class="flex items-center justify-center w-8 h-8 rounded-box bg-info/10 text-info">
             <#Icon iconify="ph:at-duotone" class="size-4" />
           </span>
           <span class="text-sm">{l("Replies and @ mentions")}</span>

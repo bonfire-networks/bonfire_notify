@@ -7,9 +7,9 @@
 >
   {!-- PWA Install prompt --}
   <div :if={@variant == :full} id="pwa-install-section" class="hidden mb-4">
-    <div class="flex items-center justify-between p-3 rounded-xl bg-success/10 border border-success/20">
+    <div class="flex items-center justify-between p-3 rounded-box bg-success/10 border border-success/20">
       <div class="flex items-center gap-3">
-        <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-success/20 text-success">
+        <span class="flex items-center justify-center w-8 h-8 rounded-box bg-success/20 text-success">
           <#Icon iconify="ph:device-mobile-duotone" class="size-4" />
         </span>
         <div>
@@ -26,20 +26,20 @@
 
   {!-- Warnings, where somebody came to manage this. A prompt elsewhere stays quiet about a browser that cannot do it at all --}
   {#if !@push_supported}
-    <div class="flex items-center gap-3 p-3 rounded-xl bg-warning/10 border border-warning/20 mb-4">
+    <div class="flex items-center gap-3 p-3 rounded-box bg-warning/10 border border-warning/20 mb-4">
       <#Icon iconify="ph:warning-duotone" class="size-5 text-warning flex-shrink-0" />
       <span class="text-sm text-base-content">{l("Push notifications are not supported in this browser")}</span>
     </div>
   {#elseif !@vapid_public_key}
     <div
       :if={!@vapid_public_key}
-      class="flex items-center gap-3 p-3 rounded-xl bg-info/10 border border-info/20 mb-4"
+      class="flex items-center gap-3 p-3 rounded-box bg-info/10 border border-info/20 mb-4"
     >
       <#Icon iconify="ph:info-duotone" class="size-5 text-info flex-shrink-0" />
       <span class="text-sm text-base-content">{l("Push notifications are not enabled on this server")}</span>
     </div>
   {#elseif @variant != :full && @current_device_subscribed}
-    <div class="flex items-center gap-3 p-3 rounded-xl bg-success/10 border border-success/20 mb-4">
+    <div class="flex items-center gap-3 p-3 rounded-box bg-success/10 border border-success/20 mb-4">
       <#Icon iconify="ph:success-duotone" class="size-5 text-success flex-shrink-0" />
       <span class="text-sm text-base-content">{l("Push notifications enabled")}</span>
     </div>
@@ -48,13 +48,13 @@
     <div>
       {!-- Enable/Disable toggle --}
       <div class={
-        "notification-push-offer flex items-center justify-between gap-4 p-3 rounded-xl border",
+        "notification-push-offer flex items-center justify-between gap-4 p-3 rounded-box border",
         "border-primary/20 bg-primary/5": @current_device_subscribed,
         "border-divider bg-base-200/30": !@current_device_subscribed
       }>
         <div class="flex items-center gap-3">
           <span class={
-            "flex items-center justify-center w-8 h-8 rounded-lg",
+            "flex items-center justify-center w-8 h-8 rounded-box",
             "bg-primary/20 text-primary": @current_device_subscribed,
             "bg-fill-strong text-muted": !@current_device_subscribed
           }>
@@ -184,13 +184,13 @@
             {#case {Bonfire.Notify.PushDevice.label(sub.push_device), is_current_device?(sub, @current_endpoint)}}
               {#match {label, is_current}}
                 <div class={
-                  "notification-push-device flex items-center justify-between gap-3 rounded-xl transition-colors",
+                  "notification-push-device flex items-center justify-between gap-3 rounded-box transition-colors",
                   "bg-primary/5 border border-primary/15": is_current,
                   "bg-base-200/30 border border-transparent hover:border-divider": !is_current
                 }>
                   <div class="flex items-center gap-3">
                     <span class={
-                      "flex items-center justify-center w-8 h-8 rounded-lg",
+                      "flex items-center justify-center w-8 h-8 rounded-box",
                       "bg-primary/15 text-primary": is_current,
                       "bg-fill text-muted": !is_current
                     }>
