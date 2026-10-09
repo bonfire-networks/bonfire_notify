@@ -45,11 +45,14 @@
           }
         >
           <span class="touch-target-hit-area" aria-hidden="true" />
-          <#Icon iconify={if @enabled, do: "ph:bell-ringing-fill", else: "ph:bell"} class={
-            "w-4 h-4",
-            "text-primary": is_nil(@button_class) and @enabled,
-            "text-base-content": is_nil(@button_class) and !@enabled
-            } />
+          <#Icon
+            iconify={if @enabled, do: "ph:bell-ringing-fill", else: "ph:bell"}
+            class={
+              "w-4 h-4",
+              "text-primary": is_nil(@button_class) and @enabled,
+              "text-base-content": is_nil(@button_class) and !@enabled
+            }
+          />
           <span class="sr-only">{text}</span>
         </button>
       {/if}
