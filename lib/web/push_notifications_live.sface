@@ -50,13 +50,13 @@
       <div class={
         "notification-push-offer flex items-center justify-between gap-4 p-3 rounded-xl border",
         "border-primary/20 bg-primary/5": @current_device_subscribed,
-        "border-secondary bg-base-200/30": !@current_device_subscribed
+        "border-divider bg-base-200/30": !@current_device_subscribed
       }>
         <div class="flex items-center gap-3">
           <span class={
             "flex items-center justify-center w-8 h-8 rounded-lg",
             "bg-primary/20 text-primary": @current_device_subscribed,
-            "bg-base-content/10 text-muted": !@current_device_subscribed
+            "bg-fill-strong text-muted": !@current_device_subscribed
           }>
             <#Icon iconify="ph:bell-duotone" class="size-4" />
           </span>
@@ -99,7 +99,7 @@
     <div :if={@current_device_subscribed} class="mt-4">
       <p class="text-xs font-medium text-muted uppercase tracking-wider mb-2 px-1">{l("Notify me about")}</p>
       <form phx-change="Bonfire.Common.Settings:set">
-        <div class="divide-y divide-base-content/5">
+        <div class="divide-y divide-divider">
           <label class="flex items-center justify-between py-2.5 cursor-pointer group">
             <div class="flex items-center gap-3">
               <span class="flex items-center justify-center w-7 h-7 rounded-md bg-info/10 text-info">
@@ -186,13 +186,13 @@
                 <div class={
                   "notification-push-device flex items-center justify-between gap-3 rounded-xl transition-colors",
                   "bg-primary/5 border border-primary/15": is_current,
-                  "bg-base-200/30 border border-transparent hover:border-secondary": !is_current
+                  "bg-base-200/30 border border-transparent hover:border-divider": !is_current
                 }>
                   <div class="flex items-center gap-3">
                     <span class={
                       "flex items-center justify-center w-8 h-8 rounded-lg",
                       "bg-primary/15 text-primary": is_current,
-                      "bg-base-content/5 text-muted": !is_current
+                      "bg-fill text-muted": !is_current
                     }>
                       <#Icon iconify="ph:globe-duotone" class="size-4" />
                     </span>
@@ -221,7 +221,7 @@
                   </div>
                   <button
                     type="button"
-                    class="btn btn-ghost btn-xs text-base-content/30 hover:text-error hover:bg-error/10"
+                    class="btn btn-ghost btn-xs text-subtle hover:text-error hover:bg-error/10"
                     phx-click="remove_device"
                     phx-value-id={sub.push_device_id}
                     phx-target={@myself}
@@ -239,7 +239,7 @@
       {!-- Empty state --}
       <div
         :if={@variant == :full and @subscriptions == [] and !@current_device_subscribed}
-        class="flex flex-col items-center gap-2 py-8 text-base-content/30"
+        class="flex flex-col items-center gap-2 py-8 text-subtle"
       >
         <#Icon iconify="ph:bell-slash-duotone" class="size-8" />
         <p class="text-sm">{l("No devices registered")}</p>

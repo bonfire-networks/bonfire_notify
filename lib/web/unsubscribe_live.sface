@@ -1,5 +1,5 @@
 <div data-role="unsubscribe_confirm" class="flex flex-col gap-3">
-  <p class="text-sm text-base-content/70">{l("Stop notifications you turned on, or that your posts and comments turned on for you.")}</p>
+  <p class="text-sm text-muted">{l("Stop notifications you turned on, or that your posts and comments turned on for you.")}</p>
 
   <button
     type="button"
@@ -27,7 +27,7 @@
     <span class="badge badge-sm tabular-nums">{@all_count}</span>
   </button>
 
-  <p :if={@all_count > @followed_count} class="text-xs text-base-content/60">
+  <p :if={@all_count > @followed_count} class="text-xs text-muted">
     {l("Replies to your own posts and comments will then only notify you when they mention you.")}
   </p>
 </div>
