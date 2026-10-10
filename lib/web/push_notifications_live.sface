@@ -9,7 +9,7 @@
   <div :if={@variant == :full} id="pwa-install-section" class="hidden mb-4">
     <div class="flex items-center justify-between p-3 rounded-box bg-success/10 border border-success/20">
       <div class="flex items-center gap-3">
-        <span class="flex items-center justify-center w-8 h-8 rounded-box bg-success/20 text-success">
+        <span class="flex items-center justify-center size-8 rounded-box bg-success/20 text-success">
           <#Icon iconify="ph:device-mobile-duotone" class="size-4" />
         </span>
         <div>
@@ -54,7 +54,7 @@
       }>
         <div class="flex items-center gap-3">
           <span class={
-            "flex items-center justify-center w-8 h-8 rounded-box",
+            "flex items-center justify-center size-8 rounded-box",
             "bg-primary/20 text-primary": @current_device_subscribed,
             "bg-fill-strong text-muted": !@current_device_subscribed
           }>
@@ -102,7 +102,7 @@
         <div class="divide-y divide-divider">
           <label class="flex items-center justify-between py-2.5 cursor-pointer group">
             <div class="flex items-center gap-3">
-              <span class="flex items-center justify-center w-7 h-7 rounded-md bg-info/10 text-info">
+              <span class="flex items-center justify-center size-7 rounded-md bg-info/10 text-info">
                 <#Icon iconify="ph:at-duotone" class="size-4" />
               </span>
               <span class="text-sm">{l("Replies and mentions")}</span>
@@ -116,7 +116,7 @@
           </label>
           <label class="flex items-center justify-between py-2.5 cursor-pointer group">
             <div class="flex items-center gap-3">
-              <span class="flex items-center justify-center w-7 h-7 rounded-md bg-error/10 text-error">
+              <span class="flex items-center justify-center size-7 rounded-md bg-error/10 text-error">
                 <#Icon iconify="ph:fire-duotone" class="size-4" />
               </span>
               <span class="text-sm">{l("Likes")}</span>
@@ -130,7 +130,7 @@
           </label>
           <label class="flex items-center justify-between py-2.5 cursor-pointer group">
             <div class="flex items-center gap-3">
-              <span class="flex items-center justify-center w-7 h-7 rounded-md bg-success/10 text-success">
+              <span class="flex items-center justify-center size-7 rounded-md bg-success/10 text-success">
                 <#Icon iconify="ph:rocket-launch-duotone" class="size-4" />
               </span>
               <span class="text-sm">{l("Boosts")}</span>
@@ -144,7 +144,7 @@
           </label>
           <label class="flex items-center justify-between py-2.5 cursor-pointer group">
             <div class="flex items-center gap-3">
-              <span class="flex items-center justify-center w-7 h-7 rounded-md bg-accent/10 text-accent">
+              <span class="flex items-center justify-center size-7 rounded-md bg-accent/10 text-accent">
                 <#Icon iconify="ph:user-plus-duotone" class="size-4" />
               </span>
               <span class="text-sm">{l("Follows")}</span>
@@ -158,7 +158,7 @@
           </label>
           <label class="flex items-center justify-between py-2.5 cursor-pointer group">
             <div class="flex items-center gap-3">
-              <span class="flex items-center justify-center w-7 h-7 rounded-md bg-warning/10 text-warning">
+              <span class="flex items-center justify-center size-7 rounded-md bg-warning/10 text-warning">
                 <#Icon iconify="ph:chat-circle-duotone" class="size-4" />
               </span>
               <span class="text-sm">{l("Messages")}</span>
@@ -190,7 +190,7 @@
                 }>
                   <div class="flex items-center gap-3">
                     <span class={
-                      "flex items-center justify-center w-8 h-8 rounded-box",
+                      "flex items-center justify-center size-8 rounded-box",
                       "bg-primary/15 text-primary": is_current,
                       "bg-fill text-muted": !is_current
                     }>
@@ -200,7 +200,7 @@
                       <p class="text-sm font-medium flex items-center gap-2">
                         {label}
                         <span :if={is_current} class="badge badge-primary badge-xs gap-0.5">
-                          <span class="w-1.5 h-1.5 rounded-full bg-primary-content animate-pulse" />
+                          <span class="size-1.5 rounded-full bg-primary-content animate-pulse" />
                           {l("This device")}
                         </span>
                       </p>

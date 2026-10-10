@@ -11,7 +11,7 @@
       {#elseif @menu_item and is_nil(@enabled)}
         <div aria-hidden="true" class="flex items-center justify-between gap-2 w-full">
           <div class="h-3 w-32 rounded bg-fill-strong animate-pulse" />
-          <div class="w-5 h-5 shrink-0 rounded-full bg-fill-strong animate-pulse" />
+          <div class="size-5 shrink-0 rounded-full bg-fill-strong animate-pulse" />
         </div>
       {#elseif @menu_item}
         <button
@@ -25,7 +25,7 @@
           <span class="flex-1 text-sm text-left">{text}</span>
           <#Icon
             iconify={if @enabled, do: "ph:bell-ringing-fill", else: "ph:bell"}
-            class="w-5 h-5 shrink-0"
+            class="size-5 shrink-0"
           />
         </button>
       {#else}
@@ -48,7 +48,7 @@
           <#Icon
             iconify={if @enabled, do: "ph:bell-ringing-fill", else: "ph:bell"}
             class={
-              "w-4 h-4",
+              "size-4",
               "text-primary": is_nil(@button_class) and @enabled,
               "text-base-content": is_nil(@button_class) and !@enabled
             }

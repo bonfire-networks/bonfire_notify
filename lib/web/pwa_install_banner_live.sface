@@ -13,7 +13,7 @@
         <img
           src={Config.get([:ui, :theme, :instance_icon], "/images/bonfire-icon.png")}
           alt=""
-          class="w-9 h-9 rounded-box flex-shrink-0"
+          class="size-9 rounded-box flex-shrink-0"
         />
         <div class="flex-1 min-w-0">
           <p class="text-sm font-medium leading-tight">{l("Install %{name}",
@@ -45,7 +45,7 @@
           <span class="flex items-center justify-center size-5 shrink-0 rounded-full bg-primary/20 text-primary text-xs font-bold">1</span>
           {l("Tap")}
           <svg
-            class="w-4 h-4 text-primary"
+            class="size-4 text-primary"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
