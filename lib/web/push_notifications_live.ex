@@ -20,9 +20,11 @@ defmodule Bonfire.Notify.Settings.PushNotificationsLive do
   prop scope, :any, default: nil
 
   @doc """
-  How much of this to show: `:full` manages every device, `:compact` is only an offer to turn push on here.
+  How much of this to show: `:full` manages every device, `:compact` is only an offer to turn push on here, and `:step` is that offer inside a getting-started step.
 
   One component either way, because enabling push means asking the browser and keeping a subscription, and a second copy of that could only be a fake. The compact form is for places that are not about settings (a prompt beside the notifications, onboarding widget, etc), so it shows nothing once this browser is subscribed, and asks for no device list, since listing devices is the one part that costs a query.
+
+  The step form shows only the action, or why there is none (see `step_state/1`).
   """
   prop variant, :any, default: :full
 
@@ -35,6 +37,9 @@ defmodule Bonfire.Notify.Settings.PushNotificationsLive do
   @doc "What this browser says about notification permission (`granted`, `denied`, `default`), which only the client can know."
   data permission, :string, default: nil
 
+  @doc "Whether the browser has reported its push state yet."
+  data reported, :boolean, default: false
+
   def update(assigns, socket) do
     # Assign first so __context__ is available
     socket = assign(socket, assigns)
@@ -45,9 +50,49 @@ defmodule Bonfire.Notify.Settings.PushNotificationsLive do
      |> maybe_load_devices(current_user(assigns) || current_user(socket))}
   end
 
+  @doc """
+  This browser's push state for the step form: `:checking`, `:on`, `:blocked`, `:unsupported`, `:unconfigured` (no VAPID keys) or `:offer`.
+  """
+  def step_state(assigns) do
+    cond do
+      is_nil(assigns[:vapid_public_key]) -> :unconfigured
+      assigns[:push_supported] == false -> :unsupported
+      assigns[:reported] != true -> :checking
+      assigns[:current_device_subscribed] == true -> :on
+      assigns[:permission] == "denied" -> :blocked
+      true -> :offer
+    end
+  end
+
+  @doc "The status line the step form shows instead of a button: `{icon, box_class, icon_class, message}`."
+  def step_status(:on),
+    do:
+      {"ph:check-circle-fill", "bg-success/10 text-base-content", "text-success",
+       l("On for this device. Notifications will reach you here even when Bonfire is closed.")}
+
+  # a blocked origin can't be prompted again
+  def step_status(:blocked),
+    do:
+      {"ph:bell-slash-duotone", "bg-warning/10 text-base-content", "text-warning",
+       l(
+         "Notifications are blocked for this site. Allow them in your browser's site settings, then reload this page."
+       )}
+
+  def step_status(:unsupported),
+    do:
+      {"ph:info", "bg-fill text-muted", nil,
+       l(
+         "This browser can't receive push notifications. On iPhone and iPad, add Bonfire to your home screen first and open it from there."
+       )}
+
+  def step_status(:unconfigured),
+    do:
+      {"ph:info", "bg-fill text-muted", nil,
+       l("Push notifications are not enabled on this server.")}
+
   # only where they are shown: this renders on every page in its compact form, and a device list nobody is looking at is a query per page load
   defp maybe_load_devices(socket, user) do
-    if user && socket.assigns[:vapid_public_key] && socket.assigns[:variant] != :compact,
+    if user && socket.assigns[:vapid_public_key] && socket.assigns[:variant] == :full,
       do: assign(socket, :subscriptions, WebPush.list_subscriptions(id(user))),
       else: assign(socket, :subscriptions, [])
   end
@@ -87,6 +132,7 @@ defmodule Bonfire.Notify.Settings.PushNotificationsLive do
      |> assign(:current_device_subscribed, not is_nil(endpoint))
      |> assign(:current_endpoint, endpoint)
      |> assign(:permission, params["permission"])
+     |> assign(:reported, true)
      |> maybe_load_devices(user)}
   end
 
@@ -164,6 +210,8 @@ defmodule Bonfire.Notify.Settings.PushNotificationsLive do
   def handle_event("push_subscription_error", %{"error" => error} = params, socket) do
     {:noreply,
      socket
+     # so a refused prompt shows the "blocked" guidance straight away
+     |> assign(:permission, params["permission"] || socket.assigns.permission)
      |> assign_flash(
        :error,
        enable_failure_message(params["name"], error, params["permission"])
@@ -243,7 +291,7 @@ defmodule Bonfire.Notify.Settings.PushNotificationsLive do
 
   # Handle push not supported
   def handle_event("push_not_supported", _params, socket) do
-    {:noreply, assign(socket, :push_supported, false)}
+    {:noreply, assign(socket, push_supported: false, reported: true)}
   end
 
   # the confirmation IS a push, so turning it on proves the whole chain at the moment somebody cares, through the same channel a real notification uses. It also surfaces the layer browser permission does not cover: an operating system can suppress a browser's notifications entirely (macOS asks per browser), so permission can be granted and nothing ever appear

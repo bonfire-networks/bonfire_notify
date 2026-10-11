@@ -24,8 +24,35 @@
     </div>
   </div>
 
-  {!-- Warnings, where somebody came to manage this. A prompt elsewhere stays quiet about a browser that cannot do it at all --}
-  {#if !@push_supported}
+  {#if @variant == :step}
+    {#case Bonfire.Notify.Settings.PushNotificationsLive.step_state(assigns)}
+      {#match state when state in [:checking, :offer]}
+        {!-- disabled until the browser reports, to avoid a layout jump --}
+        <button
+          type="button"
+          class="btn btn-primary w-full gap-2"
+          data-id="push_step_enable"
+          phx-click="enable_push"
+          phx-target={@myself}
+          disabled={state == :checking}
+        >
+          <#Icon iconify="ph:bell" class="size-4" />
+          <span>{l("Turn on for this device")}</span>
+        </button>
+      {#match state}
+        {#case Bonfire.Notify.Settings.PushNotificationsLive.step_status(state)}
+          {#match {icon, box_class, icon_class, message}}
+            <div
+              class={"flex items-start gap-2 rounded-box px-3 py-2.5 text-sm", box_class}
+              data-id={"push_step_#{state}"}
+            >
+              <Iconify.iconify icon={icon} class={"size-4 shrink-0 mt-0.5 #{icon_class}"} />
+              <span>{message}</span>
+            </div>
+        {/case}
+    {/case}
+  {#elseif !@push_supported}
+    {!-- Warnings, where somebody came to manage this. A prompt elsewhere stays quiet about a browser that cannot do it at all --}
     <div class="flex items-center gap-3 p-3 rounded-box bg-warning/10 border border-warning/20 mb-4">
       <#Icon iconify="ph:warning-duotone" class="size-5 text-warning flex-shrink-0" />
       <span class="text-sm text-base-content">{l("Push notifications are not supported in this browser")}</span>

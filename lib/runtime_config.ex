@@ -112,6 +112,7 @@ defmodule Bonfire.Notify.RuntimeConfig do
           rationale: l("So a reply or a message reaches you even when this tab isn't open."),
           cta_kind: :stateful_component,
           cta_component: Bonfire.Notify.Settings.PushNotificationsLive,
+          cta_variant: :step,
           cta_path: nil,
           needs: Bonfire.Notify.UserPushSubscription,
           done?: &Bonfire.Notify.UserPushSubscription.any_active?/1

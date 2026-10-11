@@ -28,9 +28,15 @@ NotifyHooks.PushSettingsHook = {
 
     await this.initServiceWorker();
 
+    // report it, or the page waits for a report that never comes
+    if (!this.swRegistration) {
+      this.pushEventTo(this.el, 'push_not_supported', {});
+      return;
+    }
+
     // Check PushManager after SW registration — in PWAs it may only be
     // available on the registration object, not on window
-    if (!this.swRegistration?.pushManager && !('PushManager' in window)) {
+    if (!this.swRegistration.pushManager && !('PushManager' in window)) {
       this.pushEventTo(this.el, 'push_not_supported', {});
       return;
     }
@@ -121,6 +127,7 @@ NotifyHooks.PushSettingsHook = {
       });
     } catch (error) {
       console.error('PushSettings: Error checking subscription:', error);
+      this.pushEventTo(this.el, 'push_not_supported', {});
     }
   },
 
