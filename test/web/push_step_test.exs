@@ -5,7 +5,12 @@ defmodule Bonfire.Notify.PushStepTest do
   alias Bonfire.Notify.Settings.PushNotificationsLive
 
   test "step_state/1 says where this browser stands" do
-    reported = %{reported: true, push_supported: true, vapid_public_key: "key", permission: "default"}
+    reported = %{
+      reported: true,
+      push_supported: true,
+      vapid_public_key: "key",
+      permission: "default"
+    }
 
     for {assigns, state} <- [
           {%{reported | reported: false}, :checking},
@@ -44,7 +49,9 @@ defmodule Bonfire.Notify.PushStepTest do
       end
     end
 
-    test "says it can't, rather than waiting for good, when the browser has no push", %{view: view} do
+    test "says it can't, rather than waiting for good, when the browser has no push", %{
+      view: view
+    } do
       view |> step_hook() |> render_hook("push_not_supported", %{})
 
       assert has_element?(view, "[data-id=push_step_unsupported]")
