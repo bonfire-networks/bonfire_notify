@@ -9,9 +9,9 @@
     {#match text}
       {#if !current_user_id(@__context__)}
       {#elseif @menu_item and is_nil(@enabled)}
-        <div aria-hidden="true" class="flex items-center justify-between gap-2 w-full">
+        <div aria-hidden="true" class="flex items-center gap-3 w-full">
+          <div class="size-4 shrink-0 rounded-full bg-fill-strong animate-pulse" />
           <div class="h-3 w-32 rounded bg-fill-strong animate-pulse" />
-          <div class="size-5 shrink-0 rounded-full bg-fill-strong animate-pulse" />
         </div>
       {#elseif @menu_item}
         <button
@@ -20,13 +20,13 @@
           phx-target={@myself}
           aria-pressed={if @enabled, do: "true", else: "false"}
           title={@hint}
-          class="flex items-center justify-between gap-2 text-sm text-base-content w-full"
+          class="flex items-center gap-3 text-sm text-base-content w-full"
         >
-          <span class="flex-1 text-sm text-left">{text}</span>
           <#Icon
             iconify={if @enabled, do: "ph:bell-ringing-fill", else: "ph:bell"}
-            class="size-5 shrink-0"
+            class="size-4 shrink-0 text-muted"
           />
+          <span class="flex-1 text-left">{text}</span>
         </button>
       {#else}
         <button
