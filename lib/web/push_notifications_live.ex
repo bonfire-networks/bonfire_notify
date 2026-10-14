@@ -28,6 +28,9 @@ defmodule Bonfire.Notify.Settings.PushNotificationsLive do
   """
   prop variant, :any, default: :full
 
+  @doc "Shown inside the notification preferences panel, which supplies the surface, so the offer and device rows drop their own boxes."
+  prop embedded, :boolean, default: false
+
   data vapid_public_key, :string, default: nil
   data subscriptions, :list, default: []
   data push_supported, :boolean, default: true

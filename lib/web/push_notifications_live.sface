@@ -75,13 +75,16 @@
     <div>
       {!-- Enable/Disable toggle --}
       <div class={
-        "notification-push-offer flex items-center justify-between gap-4 p-3 rounded-box border",
-        "border-primary/20 bg-primary/5": @current_device_subscribed,
-        "border-divider bg-base-200/30": !@current_device_subscribed
+        "notification-push-offer flex items-center justify-between gap-4",
+        "min-h-16 max-[481px]:flex-wrap": @embedded,
+        "p-3 rounded-box border": !@embedded,
+        "border-primary/20 bg-primary/5": !@embedded and @current_device_subscribed,
+        "border-divider bg-base-200/30": !@embedded and !@current_device_subscribed
       }>
-        <div class="flex items-center gap-3">
+        <div class={"flex items-center gap-3", "min-w-0": @embedded}>
           <span class={
             "flex items-center justify-center size-8 rounded-box",
+            "shrink-0": @embedded,
             "bg-primary/20 text-primary": @current_device_subscribed,
             "bg-fill-strong text-muted": !@current_device_subscribed
           }>
@@ -204,34 +207,36 @@
 
       {!-- Registered devices --}
       <div :if={@subscriptions != []} class="notification-push-device-list mt-4">
-        <p class="text-xs font-medium text-muted uppercase tracking-wider mb-2 px-1">{l("Devices")}</p>
+        <p class={"text-xs font-medium text-muted mb-2", "uppercase tracking-wider px-1": !@embedded}>{l("Devices")}</p>
         <div class="space-y-1.5">
           {#for sub <- @subscriptions}
             {!-- what the device called itself if it did, and what its push service suggests if it didn't --}
             {#case {Bonfire.Notify.PushDevice.label(sub.push_device), is_current_device?(sub, @current_endpoint)}}
               {#match {label, is_current}}
                 <div class={
-                  "notification-push-device flex items-center justify-between gap-3 rounded-box transition-colors",
-                  "bg-primary/5 border border-primary/15": is_current,
-                  "bg-base-200/30 border border-transparent hover:border-divider": !is_current
+                  "notification-push-device flex items-center justify-between gap-3 transition-colors",
+                  "rounded-box": !@embedded,
+                  "bg-primary/5 border border-primary/15": !@embedded and is_current,
+                  "bg-base-200/30 border border-transparent hover:border-divider": !@embedded and !is_current
                 }>
-                  <div class="flex items-center gap-3">
+                  <div class={"flex items-center gap-3", "min-w-0": @embedded}>
                     <span class={
                       "flex items-center justify-center size-8 rounded-box",
+                      "shrink-0": @embedded,
                       "bg-primary/15 text-primary": is_current,
                       "bg-fill text-muted": !is_current
                     }>
                       <#Icon iconify="ph:globe-duotone" class="size-4" />
                     </span>
                     <div>
-                      <p class="text-sm font-medium flex items-center gap-2">
+                      <p class={"text-sm font-medium flex items-center gap-2", "wrap-anywhere": @embedded}>
                         {label}
                         <span :if={is_current} class="badge badge-primary badge-xs gap-0.5">
                           <span class="size-1.5 rounded-full bg-primary-content animate-pulse" />
                           {l("This device")}
                         </span>
                       </p>
-                      <p class="text-xs text-muted">
+                      <p class={"text-xs text-muted", "wrap-anywhere": @embedded}>
                         {!-- what the client said about itself, which tells a Chrome-on-Android row from a Chrome-on-macOS one where the endpoint alone cannot. Nothing for a client that said nothing, nor for the bare fallback, which adds nothing beside the browser --}
                         {#case Bonfire.Notify.PushDevice.platform(sub.push_device)}
                           {#match nil}
@@ -248,7 +253,11 @@
                   </div>
                   <button
                     type="button"
-                    class="btn btn-ghost btn-xs text-subtle hover:text-error hover:bg-error/10"
+                    class={
+                      "btn btn-ghost btn-xs hover:text-error hover:bg-error/10",
+                      "shrink-0 text-base-content": @embedded,
+                      "text-subtle": !@embedded
+                    }
                     phx-click="remove_device"
                     phx-value-id={sub.push_device_id}
                     phx-target={@myself}
