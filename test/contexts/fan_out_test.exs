@@ -57,6 +57,27 @@ defmodule Bonfire.Notify.FanOutTest do
     assert [] = FanOut.still_to_notify(recipients_for([bob]), private_activity)
   end
 
+  # a denial is a grant too, with `value: false`, and must count against them rather than for them
+  test "a recipient denied seeing and reading an otherwise public object is dropped", %{
+    alice: alice,
+    bob: bob
+  } do
+    {:ok, post} =
+      Bonfire.Posts.publish(
+        current_user: alice,
+        post_attrs: %{post_content: %{html_body: "public, except for bob"}},
+        boundary: "public",
+        to_circles: [{bob.id, verbs: [see: false, read: false]}]
+      )
+
+    refute Bonfire.Boundaries.can?(bob, :read, post), "control: the denial took"
+
+    assert Bonfire.Boundaries.can?(Bonfire.Me.Fake.fake_user!(), :read, post),
+           "control: anyone else may read it"
+
+    assert [] = FanOut.still_to_notify(recipients_for([bob]), e(post, :activity, nil))
+  end
+
   # a notification row can be written for someone who can't read the post (the rows go in with the post, before its boundary exists to check), and it must not reach their badge: the fan-out removes it and bumps only the counters of who can
   test "someone who can't see it loses the row and isn't counted, someone who can is counted", %{
     alice: alice,

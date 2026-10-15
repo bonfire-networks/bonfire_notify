@@ -7,7 +7,7 @@ defmodule Bonfire.Notify.FanOut do
 
   `Seen` is account-keyed, so reading something as one persona counts for all of them, which is deliberate.
 
-  The boundary check is `Boundaries.users_grants_on/3` rather than a per-recipient `can?/3` or `load_pointers/2`, which would be one query each. It reads the same `Summary` view a feed's own filter does (`Boundaries.Queries.query_with_summary/2`), with the same circle expansion and the same negative precedence, so it sees what the reader would see in their feed. Blocks included: hiding or locking an object writes `:can_only_read`/`:cannot_participate_or_more` grants on its ACL, and blocking a person puts them in stereotype circles whose grants are in that view too.
+  The boundary check is `Boundaries.permitted_users/3`, one query for all recipients, rather than a per-recipient `can?/3` or `load_pointers/2`, which would be one query each. It reads the same `Summary` view a feed's own filter does (`Boundaries.Queries.query_with_summary/2`), with the same circle expansion and the same negative precedence, so it sees what the reader would see in their feed. Blocks included: hiding or locking an object writes `:can_only_read`/`:cannot_participate_or_more` grants on its ACL, and blocking a person puts them in stereotype circles whose grants are in that view too.
   """
   use Bonfire.Common.Repo
   use Bonfire.Common.E
@@ -251,12 +251,10 @@ defmodule Bonfire.Notify.FanOut do
 
   defp reject_cannot_see(recipients, object) do
     allowed =
-      Boundaries.users_grants_on(Enum.map(recipients, fn {user, _feed} -> user end), object, [
-        :see,
-        :read
-      ])
-      |> Enum.map(&e(&1, :subject_id, nil))
-      |> MapSet.new()
+      recipients
+      |> Enum.map(fn {user, _feed} -> user end)
+      |> Boundaries.permitted_users([:see, :read], object)
+      |> MapSet.new(&Types.uid/1)
 
     Enum.filter(recipients, fn {user, _feed} -> MapSet.member?(allowed, Types.uid(user)) end)
   end
