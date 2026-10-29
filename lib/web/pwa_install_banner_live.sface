@@ -1,11 +1,11 @@
 <div
   id="pwa-install-banner"
   phx-hook="PWAInstallBannerHook"
-  class="hidden fixed dock-safe-bottom inset-x-0 z-[99999999999999] p-3"
+  class="hidden fixed dock-safe-bottom inset-x-0 z-[99999999999999] p-3 pointer-events-none"
 >
   {!-- Gradient border wrapper --}
   <div
-    class="mx-auto max-w-lg w-full rounded-box p-[1px]"
+    class="mx-auto max-w-lg w-full rounded-box p-[1px] pointer-events-auto"
     style="background: linear-gradient(135deg, var(--color-primary), var(--color-secondary), var(--color-accent), var(--color-primary));"
   >
     <div class="bg-base-100 w-full rounded-[calc(1rem-1px)] shadow-[0_-4px_30px_rgba(0,0,0,.2)] px-4 py-3">
