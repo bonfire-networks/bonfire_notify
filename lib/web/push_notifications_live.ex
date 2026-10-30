@@ -31,6 +31,9 @@ defmodule Bonfire.Notify.Settings.PushNotificationsLive do
   @doc "Shown inside the notification preferences panel, which supplies the surface, so the offer and device rows drop their own boxes."
   prop embedded, :boolean, default: false
 
+  @doc "Whether an embedded offer may put its button on a line of its own on narrow screens. The app banner keeps it on the row, beside its install row."
+  prop wrap, :boolean, default: true
+
   data vapid_public_key, :string, default: nil
   data subscriptions, :list, default: []
   data push_supported, :boolean, default: true
@@ -103,12 +106,17 @@ defmodule Bonfire.Notify.Settings.PushNotificationsLive do
   # Handle enable push button click - triggers JS to request browser permission
   def handle_event("enable_push", _params, socket) do
     vapid_key = socket.assigns.vapid_public_key
-    {:noreply, push_event(socket, "request_push_permission", %{vapid_key: vapid_key})}
+    {:noreply, push_to_own_hook(socket, "request_push_permission", %{vapid_key: vapid_key})}
   end
 
   # Handle disable push button click - triggers JS to unsubscribe
   def handle_event("disable_push", _params, socket) do
-    {:noreply, push_event(socket, "request_push_disable", %{})}
+    {:noreply, push_to_own_hook(socket, "request_push_disable", %{})}
+  end
+
+  # `push_event` reaches every hook on the page that listens for it, and this component can be on a page twice (the app banner beside settings or the getting-started step), where both would ask the browser and subscribe, leaving the first endpoint stored but stale. So the event names the hook it is for, and the others ignore it
+  defp push_to_own_hook(socket, event, payload) do
+    push_event(socket, event, Map.put(payload, :target, "push-settings-#{socket.assigns.id}"))
   end
 
   @doc """
@@ -190,7 +198,7 @@ defmodule Bonfire.Notify.Settings.PushNotificationsLive do
          # the browser's own subscription goes only once nobody is using it, since it is shared
          |> then(fn socket ->
            if who_is_left == :last_one,
-             do: push_event(socket, "push_unsubscribe", %{endpoint: endpoint}),
+             do: push_to_own_hook(socket, "push_unsubscribe", %{endpoint: endpoint}),
              else: socket
          end)
          |> assign_flash(:info, l("Push notifications turned off for this device"))}

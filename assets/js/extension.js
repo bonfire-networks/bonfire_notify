@@ -22,7 +22,7 @@ NotifyHooks.PushSettingsHook = {
     this.setupPwaInstall();
 
     if (!('serviceWorker' in navigator)) {
-      this.pushEventTo(this.el, 'push_not_supported', {});
+      this.reportNotSupported();
       return;
     }
 
@@ -30,29 +30,32 @@ NotifyHooks.PushSettingsHook = {
 
     // report it, or the page waits for a report that never comes
     if (!this.swRegistration) {
-      this.pushEventTo(this.el, 'push_not_supported', {});
+      this.reportNotSupported();
       return;
     }
 
     // Check PushManager after SW registration — in PWAs it may only be
     // available on the registration object, not on window
     if (!this.swRegistration.pushManager && !('PushManager' in window)) {
-      this.pushEventTo(this.el, 'push_not_supported', {});
+      this.reportNotSupported();
       return;
     }
 
     await this.checkCurrentSubscription();
 
+    // these reach every hook on the page, so each answers only the events its own component sent (see `push_to_own_hook`)
+    const own = (payload) => !payload?.target || payload.target === this.el.id;
+
     this.handleEvent('request_push_permission', async (payload) => {
-      await this.requestPushPermission(payload.vapid_key);
+      if (own(payload)) await this.requestPushPermission(payload.vapid_key);
     });
 
-    this.handleEvent('request_push_disable', async () => {
-      await this.disablePush();
+    this.handleEvent('request_push_disable', async (payload) => {
+      if (own(payload)) await this.disablePush();
     });
 
-    this.handleEvent('push_unsubscribe', async () => {
-      await this.unsubscribeBrowser();
+    this.handleEvent('push_unsubscribe', async (payload) => {
+      if (own(payload)) await this.unsubscribeBrowser();
     });
   },
 
@@ -127,7 +130,7 @@ NotifyHooks.PushSettingsHook = {
       });
     } catch (error) {
       console.error('PushSettings: Error checking subscription:', error);
-      this.pushEventTo(this.el, 'push_not_supported', {});
+      this.reportNotSupported();
     }
   },
 
@@ -231,6 +234,12 @@ NotifyHooks.PushSettingsHook = {
     }
   },
 
+  // The server shows why there is no toggle; a prompt that holds this component (the app banner) is told too, so it can drop an offer that cannot work rather than show the warning
+  reportNotSupported() {
+    this.pushEventTo(this.el, 'push_not_supported', {});
+    window.dispatchEvent(new CustomEvent('bonfire:push:unsupported', { detail: { el: this.el } }));
+  },
+
   // The notification component shows an in-page notification only where push is not doing it, and it lives on every page while this panel does not, so a change here is announced rather than pushed at it directly. It re-reads the subscription itself, so this carries no state.
   announcePushChanged() {
     window.dispatchEvent(new CustomEvent('bonfire:push:changed'));
@@ -246,53 +255,97 @@ NotifyHooks.PushSettingsHook = {
   }
 };
 
-// a dismissal means "not now": the banner returns after this long
-const INSTALL_DISMISS_MS = 30 * 24 * 60 * 60 * 1000;
+// the card's ✕ is for good on this device: the settings page is where to turn push on later
+const APP_BANNER_DISMISSED = 'app-banner-dismissed';
+// long enough to read the "enabled" or "blocked" line the push row shows before it goes
+const PUSH_SETTLE_MS = 4000;
 
-function installDismissedRecently() {
+function stored(key) {
   try {
-    const dismissedAt = Number(localStorage.getItem('pwa-install-dismissed'));
-    return dismissedAt > 0 && Date.now() - dismissedAt < INSTALL_DISMISS_MS;
+    return localStorage.getItem(key);
   } catch (_e) {
-    return false;
+    return null;
   }
 }
 
-NotifyHooks.PWAInstallBannerHook = {
+// Only where the browser can still ask (never asked, push available), so the card never offers what can't work. iOS has PushManager only inside the installed app, which keeps the push row out of Safari tabs.
+function pushPromptable() {
+  return typeof Notification !== 'undefined' &&
+    Notification.permission === 'default' &&
+    'serviceWorker' in navigator &&
+    'PushManager' in window;
+}
+
+// Works out which rows of `Bonfire.Notify.AppBannerLive` apply on this device and sends them, since only the browser knows
+NotifyHooks.AppBannerHook = {
   mounted() {
-    const banner = this.el;
-    const installBtn = this.el.querySelector('[data-pwa-install]');
-    const dismissBtn = this.el.querySelector('[data-pwa-dismiss]');
-    const iosInstructions = this.el.querySelector('[data-pwa-ios]');
+    if (stored(APP_BANNER_DISMISSED)) return;
 
-    if (installDismissedRecently() || PWAUtils.isPWAMode()) {
-      return;
-    }
-
-    // iOS has no install prompt, only the Share menu steps
-    const ios = PWAUtils.isIOS();
-    iosInstructions?.classList.toggle('hidden', !ios);
-    installBtn?.classList.toggle('hidden', ios);
-
-    if (ios) {
-      banner.classList.remove('hidden');
-    } else {
-      this.unsubscribeInstallable = PWAUtils.onInstallable((prompt) => {
-        banner.classList.toggle('hidden', !prompt);
-      });
-    }
-
-    installBtn?.addEventListener('click', () => PWAUtils.promptInstall());
-    dismissBtn?.addEventListener('click', () => {
-      banner.classList.add('hidden');
-      try {
-        localStorage.setItem('pwa-install-dismissed', Date.now().toString());
-      } catch (_e) {}
+    this.prompt = null;
+    this.unsubscribeInstallable = PWAUtils.onInstallable((prompt) => {
+      this.prompt = prompt;
+      this.sendRows();
     });
+    this.sendRows();
+
+    this.onClick = (e) => {
+      if (e.target.closest('[data-app-banner-install]')) return PWAUtils.promptInstall();
+      if (!e.target.closest('[data-app-banner-dismiss]')) return;
+      try {
+        localStorage.setItem(APP_BANNER_DISMISSED, Date.now().toString());
+      } catch (_e) {}
+      this.pushEventTo(this.el, 'rows', {});
+    };
+    this.el.addEventListener('click', this.onClick);
+
+    // the browser turned out unable to subscribe (no service worker, say, in a private window): drop the push row now rather than show its warning
+    this.onPushUnsupported = (e) => {
+      if (!this.el.contains(e.detail?.el)) return;
+      this.pushUnsupported = true;
+      this.sendRows();
+    };
+    window.addEventListener('bonfire:push:unsupported', this.onPushUnsupported);
+
+    // subscribed: the push row shows "enabled", then goes
+    this.onPushChanged = () => this.settle();
+    window.addEventListener('bonfire:push:changed', this.onPushChanged);
+
+    // refused at the browser's prompt: the push row shows "blocked", then goes
+    navigator.permissions?.query({ name: 'notifications' }).then((status) => {
+      // the query can answer after this hook is gone, and a listener set then would never be cleared
+      if (this.gone) return;
+      this.permissionStatus = status;
+      status.onchange = () => {
+        if (status.state === 'denied') this.settle();
+      };
+    }).catch(() => {});
+  },
+
+  sendRows() {
+    if (stored(APP_BANNER_DISMISSED)) return;
+
+    const ios = PWAUtils.isIOS();
+    const install = !PWAUtils.isPWAMode() && (ios || !!this.prompt);
+    // where the page already offers push (settings, the getting-started step) the card doesn't offer it twice. Our own push row doesn't count
+    const otherOffer = [...document.querySelectorAll('[phx-hook="PushSettingsHook"]')].some((el) => !this.el.contains(el));
+    const push = pushPromptable() && !otherOffer && !this.pushUnsupported;
+
+    this.pushEventTo(this.el, 'rows', { install, ios, push });
+  },
+
+  settle() {
+    clearTimeout(this.settleTimer);
+    this.settleTimer = setTimeout(() => this.sendRows(), PUSH_SETTLE_MS);
   },
 
   destroyed() {
+    this.gone = true;
     this.unsubscribeInstallable?.();
+    this.el.removeEventListener('click', this.onClick);
+    window.removeEventListener('bonfire:push:changed', this.onPushChanged);
+    window.removeEventListener('bonfire:push:unsupported', this.onPushUnsupported);
+    if (this.permissionStatus) this.permissionStatus.onchange = null;
+    clearTimeout(this.settleTimer);
   }
 };
 

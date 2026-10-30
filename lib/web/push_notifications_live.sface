@@ -76,7 +76,8 @@
       {!-- Enable/Disable toggle --}
       <div class={
         "notification-push-offer flex items-center justify-between gap-4",
-        "min-h-16 max-[481px]:flex-wrap": @embedded,
+        "min-h-16": @embedded,
+        "max-[481px]:flex-wrap": @embedded and @wrap,
         "p-3 rounded-box border": !@embedded,
         "border-primary/20 bg-primary/5": !@embedded and @current_device_subscribed,
         "border-divider bg-base-200/30": !@embedded and !@current_device_subscribed

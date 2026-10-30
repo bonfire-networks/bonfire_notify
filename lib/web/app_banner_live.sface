@@ -1,0 +1,59 @@
+{!-- the strip spans the screen but lets clicks through; only the card catches them --}
+<div
+  id="app-banner"
+  phx-hook="AppBannerHook"
+  phx-target={@myself}
+  class="fixed dock-safe-bottom inset-x-0 z-[99999999999999] p-3 pointer-events-none"
+>
+  <div
+    :if={@install or @push}
+    class="pointer-events-auto mx-auto max-w-md rounded-box bg-base-100 ring-1 ring-primary/80 shadow-xl"
+  >
+    <div class="flex items-center gap-2 pl-4 pr-2 pt-2">
+      <p class="flex-1 min-w-0 text-xs font-medium text-muted truncate">{l("Get more from %{name}",
+          name: Config.get([:ui, :theme, :instance_name], Bonfire.Application.name_and_flavour())
+        )}</p>
+      <button
+        data-app-banner-dismiss
+        type="button"
+        class="btn btn-ghost btn-sm btn-square text-subtle"
+        aria-label={l("Dismiss")}
+      >
+        <#Icon iconify="ph:x-duotone" class="size-4" />
+      </button>
+    </div>
+
+    <div class="px-4 pb-1">
+      <div :if={@install} class="flex items-center gap-3 py-2.5">
+        <img
+          src={Config.get([:ui, :theme, :instance_icon], "/images/bonfire-icon.png")}
+          alt=""
+          class="size-8 rounded-box flex-shrink-0"
+        />
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-medium truncate">{l("Install the app")}</p>
+          {#if @ios}
+            {!-- iOS has no install prompt, only the Share menu --}
+            {!-- one sentence, so a translation can put its parts in its own order --}
+            <p class="text-xs text-muted">{l("Tap Share, then Add to Home Screen")}</p>
+          {#else}
+            <p class="text-xs text-muted truncate">{l("Opens like an app, from your home screen")}</p>
+          {/if}
+        </div>
+        <button :if={!@ios} data-app-banner-install type="button" class="btn btn-primary btn-sm">
+          {l("Install")}
+        </button>
+      </div>
+
+      <div :if={@push} class={"py-1", "border-t border-divider": @install}>
+        <StatefulComponent
+          module={Bonfire.Notify.Settings.PushNotificationsLive}
+          id="app-banner-push"
+          variant={:compact}
+          embedded
+          wrap={false}
+        />
+      </div>
+    </div>
+  </div>
+</div>
