@@ -46,11 +46,11 @@ defmodule Bonfire.Notify.Bells do
   """
   def enable_thread_notifications_changeset(author, object_id, ancestor_ids \\ []) do
     cond do
-      # only people here have notifications to be told in: a post arriving from elsewhere enables nothing
+      # only people here have notifications to be told in: a post arriving from elsewhere enables nothing. The author comes with `character: [:peered]` loaded, as `Bonfire.Me.Users.get_current/1` loads it for the federation Act's own `is_local?` in the same epic
       not Bonfire.Common.Utils.maybe_apply(
         Bonfire.Social,
         :is_local?,
-        [author, [preload_if_needed: true]],
+        [author],
         fallback_return: false
       ) ->
         nil
