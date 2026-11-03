@@ -30,14 +30,13 @@
         {!-- disabled until the browser reports, to avoid a layout jump --}
         <button
           type="button"
-          class="btn btn-primary w-full gap-2"
+          class="btn btn-primary btn-sm"
           data-id="push_step_enable"
           phx-click="enable_push"
           phx-target={@myself}
           disabled={state == :checking}
         >
-          <#Icon iconify="ph:bell" class="size-4" />
-          <span>{l("Turn on for this device")}</span>
+          {l("Turn on for this device")}
         </button>
       {#match state}
         {#case Bonfire.Notify.Settings.PushNotificationsLive.step_status(state)}

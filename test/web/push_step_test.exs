@@ -34,19 +34,13 @@ defmodule Bonfire.Notify.PushStepTest do
 
     @hook "#push-settings-widget_getting_started_notifications"
 
-    # the widget shows one step at a time
-    defp step_hook(view, tries \\ 10) do
-      cond do
-        has_element?(view, @hook) ->
-          element(view, @hook)
+    # the checklist opens one row at a time
+    defp step_hook(view) do
+      view
+      |> element("[data-key=notifications] [data-id=widget_getting_started_step_toggle]")
+      |> render_click()
 
-        tries > 0 and has_element?(view, "[data-id=widget_getting_started_next]") ->
-          view |> element("[data-id=widget_getting_started_next]") |> render_click()
-          step_hook(view, tries - 1)
-
-        true ->
-          flunk("the getting-started widget never showed the notifications step")
-      end
+      element(view, @hook)
     end
 
     test "says it can't, rather than waiting for good, when the browser has no push", %{
