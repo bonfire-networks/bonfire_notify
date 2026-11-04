@@ -394,6 +394,35 @@ defmodule Bonfire.Notify.FanOutTest do
              "Other switched off stops them"
     end
 
+    test "a request to join a group is pushed to its moderator as a request to join, not to follow",
+         %{bob: bob} do
+      configure_native_push()
+
+      group = Bonfire.Classify.Simulate.fake_group!(bob, %{membership: "on_request"})
+      asker = Bonfire.Me.Fake.fake_user!()
+      {:ok, %{requested: true}} = Bonfire.Classify.Categories.join_group(asker, group)
+
+      {:ok, request} =
+        Bonfire.Social.Requests.get(asker, Bonfire.Boundaries.Verbs.get_id!(:join), group,
+          skip_boundary_check: true
+        )
+
+      # as the fan-out job has it: read by id, so whatever it needs it loads itself
+      {:ok, activity} = Bonfire.Social.Activities.get(Bonfire.Common.Types.uid(request),skip_boundary_check: true)
+
+      # registered after the request, so the only delivery is the one this notifies
+      {:ok, _} =
+        Bonfire.Notify.NativePush.register(bob, %{provider: "apns", token: "t-#{bob.id}"})
+
+      assert {:ok, %{deliveries: 1}} =
+               FanOut.notify(activity, %{recipients: [%{"user_id" => bob.id}], feeds: []})
+
+      assert [job] = deliver_jobs()
+      title = e(job, :args, "payload", "title", nil)
+      assert title =~ "requested to join"
+      refute title =~ "requested to follow"
+    end
+
     test "queued, it hands the whole thing to the worker instead", %{bob: bob, activity: activity} do
       configure_native_push()
 

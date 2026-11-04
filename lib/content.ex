@@ -90,7 +90,8 @@ defmodule Bonfire.Notify.Content do
   An activity arrives in two states: loaded by id in the fan-out job, or already whole from a caller that had it in memory. Nothing is re-fetched for the second, since a loaded assoc is left alone.
   """
   # `prune: true` because what an activity is about varies by verb (a post, a person followed, an edge), and one shape that doesn't fit the list would otherwise raise and take every notification in the batch with it
-  def preloaded(activity), do: repo().maybe_preload(activity, preloads(), prune: true)
+  def preloaded(activity),
+    do: activity |> repo().maybe_preload(preloads(), prune: true) |> with_request_edge()
 
   defp preloads do
     Config.get(
@@ -106,6 +107,16 @@ defmodule Bonfire.Notify.Content do
       ],
       name: l("Notification content preloads"),
       description: l("What to load about an activity in order to say what a notification says.")
+    )
+  end
+
+  # what an ask was for (to follow, to join, to quote) is on its edge, which is what tells a request to join from a request to follow (`Activities.requested_as/1`), loaded as the email loads it. Asked rather than called, since this extension doesn't depend on `bonfire_social`
+  defp with_request_edge(activity) do
+    maybe_apply(
+      Bonfire.Social.Activities,
+      :activity_preloads,
+      [activity, [:with_request_edge], [skip_boundary_check: true]],
+      fallback_return: activity
     )
   end
 

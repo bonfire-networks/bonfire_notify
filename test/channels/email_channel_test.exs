@@ -155,6 +155,60 @@ defmodule Bonfire.Notify.EmailChannelTest do
         assert email.subject =~ "replied to a discussion"
       end)
     end
+
+    test "asking to quote your post says so, not that someone asked to follow", %{alice: alice} do
+      {bob, post} = author()
+      set(bob, [:notifications, :email, :request], true)
+
+      {:ok, quote_post} =
+        Bonfire.Posts.publish(
+          current_user: alice,
+          post_attrs: %{post_content: %{html_body: "quoting you"}},
+          boundary: "public"
+        )
+
+      flush_sent_emails()
+
+      # as publishing a quote of a post that needs approval does: the ask's own fan-out is what queues the email
+      assert [_request] = Bonfire.Social.Quotes.create_quote_requests(alice, [post], quote_post)
+
+      # the ask queues its fan-out, which queues the deliveries, run in that order as the queue would
+      for op <- ["fan_out", "deliver"],
+          job <- Oban.Testing.all_enqueued(Bonfire.Common.Repo, worker: Worker),
+          job.args["op"] == op do
+        assert :ok = Worker.perform(job)
+      end
+
+      assert_email_sent(fn email ->
+        refute email.subject =~ "requested to follow"
+        assert email.subject =~ "wants to quote your post"
+      end)
+    end
+
+    test "publishing a post that quotes yours asks you, in those words", %{alice: alice} do
+      {bob, post} = author()
+      set(bob, [:notifications, :email, :request], true)
+
+      # as the composer does: the ask is made inside the quoting post's own publish, with that publish's options
+      {:ok, _quote_post} =
+        Bonfire.Posts.publish(
+          current_user: alice,
+          post_attrs: %{post_content: %{html_body: "quoting you"}},
+          boundary: "public",
+          quotes: [post]
+        )
+
+      for op <- ["fan_out", "deliver"],
+          job <- Oban.Testing.all_enqueued(Bonfire.Common.Repo, worker: Worker),
+          job.args["op"] == op do
+        assert :ok = Worker.perform(job)
+      end
+
+      assert_email_sent(fn email ->
+        refute email.subject =~ "requested to follow"
+        assert email.subject =~ "wants to quote your post"
+      end)
+    end
   end
 
   test "an email shows only what an email can: the page's buttons and menus are left out of both parts",
