@@ -408,7 +408,10 @@ defmodule Bonfire.Notify.FanOutTest do
         )
 
       # as the fan-out job has it: read by id, so whatever it needs it loads itself
-      {:ok, activity} = Bonfire.Social.Activities.get(Bonfire.Common.Types.uid(request),skip_boundary_check: true)
+      {:ok, activity} =
+        Bonfire.Social.Activities.get(Bonfire.Common.Types.uid(request),
+          skip_boundary_check: true
+        )
 
       # registered after the request, so the only delivery is the one this notifies
       {:ok, _} =

@@ -145,6 +145,18 @@ defmodule Bonfire.Notify.ContentTest do
     assert opts[:urgency] == :high
   end
 
+  # a message is read in its discussion, so a tapped notification opens the conversation rather than the inbox
+  test "a direct message's push opens its discussion page", %{alice: alice} do
+    bob = fake_user!()
+
+    assert {:ok, message} =
+             Bonfire.Messages.send(alice, %{post_content: %{html_body: "a word"}}, [bob])
+
+    for activity <- [activity_of(message), activity_in_memory(message)] do
+      assert Content.for_delivery(activity).content.url == "/discussion/#{message.id}"
+    end
+  end
+
   describe "a follow" do
     # what is followed is the reader, so there is nothing of theirs to quote: what tells them something is who is following them
     setup %{alice: alice} do
