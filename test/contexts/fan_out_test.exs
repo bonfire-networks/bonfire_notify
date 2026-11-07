@@ -289,6 +289,39 @@ defmodule Bonfire.Notify.FanOutTest do
                deliver_jobs() |> Enum.map(&e(&1, :args, "user_id", nil)) |> Enum.frequencies()
     end
 
+    # a post someone hides behind a warning is no more pushed than one they hide completely: a notification on a device shows the text
+    test "a post with a keyword bob hides behind a warning reaches none of his devices either; carol's phone gets it",
+         %{alice: alice, bob: bob} do
+      configure_native_push()
+      carol = Bonfire.Me.Fake.fake_user!()
+
+      for user <- [bob, carol] do
+        {:ok, _} =
+          Bonfire.Notify.NativePush.register(user, %{provider: "apns", token: "t-#{user.id}"})
+      end
+
+      {:ok, post} =
+        Bonfire.Posts.publish(
+          current_user: alice,
+          post_attrs: %{post_content: %{html_body: "a spoiler about the ending"}},
+          boundary: "public"
+        )
+
+      activity = e(post, :activity, nil)
+      job = %{recipients: [%{"user_id" => bob.id}, %{"user_id" => carol.id}], feeds: []}
+
+      # the positive first: nobody filters anything, both phones get it
+      assert {:ok, %{deliveries: 2}} = FanOut.notify(activity, job)
+
+      {:ok, _} =
+        Bonfire.Boundaries.BlockKeywords.put_warn_keywords_settings(["spoiler"],
+          current_user: bob
+        )
+
+      assert {:ok, %{deliveries: 1}} = FanOut.notify(activity, job),
+             "bob hides \"spoiler\" behind a warning, so it reaches none of his devices"
+    end
+
     # an audience that isn't relative to the reader is one condition shared by everyone who hides it
     test "a like from a user new to this server reaches no device of someone hiding new accounts",
          %{alice: alice, bob: bob} do
@@ -468,6 +501,35 @@ defmodule Bonfire.Notify.FanOutTest do
       title = e(job, :args, "payload", "title", nil)
       assert title =~ "requested to join"
       refute title =~ "requested to follow"
+    end
+
+    # what a follow is about, to the one followed, is who followed them, as its row and its body already say
+    test "a follow is pushed with a link to the follower, not to the one followed", %{bob: bob} do
+      configure_native_push()
+      follower = Bonfire.Me.Fake.fake_user!()
+
+      {:ok, follow} = Bonfire.Social.Graph.Follows.follow(follower, bob)
+
+      # as the fan-out job has it: read by id, so whatever it needs it loads itself
+      {:ok, activity} =
+        Bonfire.Social.Activities.get(Bonfire.Common.Types.uid(follow), skip_boundary_check: true)
+
+      {:ok, _} =
+        Bonfire.Notify.NativePush.register(bob, %{provider: "apns", token: "t-#{bob.id}"})
+
+      assert {:ok, %{deliveries: 1}} =
+               FanOut.notify(activity, %{recipients: [%{"user_id" => bob.id}], feeds: []})
+
+      assert [job] = deliver_jobs()
+      url = e(job, :args, "payload", "url", nil)
+
+      # a profile has more than one path, so whose it is shows in the username
+      assert is_binary(url) and
+               String.ends_with?(url, [
+                 "/" <> follower.character.username,
+                 "/@" <> follower.character.username
+               ]),
+             "pushed with #{inspect(url)}, the follower being @#{follower.character.username} and the one followed @#{e(bob, :character, :username, nil)}"
     end
 
     test "queued, it hands the whole thing to the worker instead", %{bob: bob, activity: activity} do

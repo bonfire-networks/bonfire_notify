@@ -261,20 +261,27 @@ defmodule Bonfire.Notify.FanOut do
     Enum.filter(recipients, fn {user, _feed} -> MapSet.member?(allowed, Types.uid(user)) end)
   end
 
+  # a match in either of the recipient's lists, hidden completely or behind a warning: a notification on a device shows the text, so neither is pushed. The post's text is read once, and only if someone has a list
   defp reject_filtered(recipients, %{html_body: _} = post_content) do
-    Enum.reject(recipients, fn {user, _feed} ->
-      case Bonfire.Boundaries.BlockKeywords.block_keywords_settings(current_user: user) do
-        nil ->
-          false
+    with_lists =
+      Enum.map(recipients, fn {user, _feed} = recipient ->
+        {recipient, Bonfire.Boundaries.BlockKeywords.block_keywords_lists(current_user: user)}
+      end)
 
-        compiled ->
-          Bonfire.Boundaries.BlockKeywords.text_fields_match?(
-            post_content,
-            [:html_body, :summary, :name],
-            compiled
-          ) == true
-      end
-    end)
+    if Enum.all?(with_lists, fn {_recipient, lists} -> is_nil(lists) end) do
+      recipients
+    else
+      prepared =
+        Bonfire.Boundaries.BlockKeywords.prepare([
+          post_content.html_body,
+          post_content.summary,
+          post_content.name
+        ])
+
+      for {recipient, lists} <- with_lists,
+          is_nil(Bonfire.Boundaries.BlockKeywords.verdict(prepared, lists)),
+          do: recipient
+    end
   end
 
   # nothing written to match (a like, a follow)
