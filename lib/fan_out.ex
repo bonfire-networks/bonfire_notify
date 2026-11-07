@@ -74,6 +74,8 @@ defmodule Bonfire.Notify.FanOut do
 
       recipients =
         Enum.reject(recipients, fn {user, _feed} -> Enums.id(user) in hidden_ids end)
+        # what each recipient filters: a post with one of their keywords isn't pushed, emailed or put in a digest either, while it still counts and shows as a placeholder in their notifications. Their settings are loaded with them, so no query
+        |> reject_filtered(e(activity, :object, :post_content, nil))
 
       by_experience =
         by_experience(recipients, activity, e(notifying, :wrote_above, nil))
@@ -258,6 +260,25 @@ defmodule Bonfire.Notify.FanOut do
 
     Enum.filter(recipients, fn {user, _feed} -> MapSet.member?(allowed, Types.uid(user)) end)
   end
+
+  defp reject_filtered(recipients, %{html_body: _} = post_content) do
+    Enum.reject(recipients, fn {user, _feed} ->
+      case Bonfire.Boundaries.BlockKeywords.block_keywords_settings(current_user: user) do
+        nil ->
+          false
+
+        compiled ->
+          Bonfire.Boundaries.BlockKeywords.text_fields_match?(
+            post_content,
+            [:html_body, :summary, :name],
+            compiled
+          ) == true
+      end
+    end)
+  end
+
+  # nothing written to match (a like, a follow)
+  defp reject_filtered(recipients, _post_content), do: recipients
 
   defp reject_already_seen(recipients, nil), do: recipients
 

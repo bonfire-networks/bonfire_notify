@@ -245,6 +245,50 @@ defmodule Bonfire.Notify.FanOutTest do
              "once he follows her, she's no longer in that audience"
     end
 
+    # what you filter applies to delivery too: a post with one of your filtered keywords reaches none of your devices, while it still counts in your notifications (where it shows as a placeholder)
+    test "a post with one of bob's filtered keywords reaches none of his devices but still counts for him; carol's phone gets it",
+         %{alice: alice, bob: bob} do
+      configure_native_push()
+      carol = Bonfire.Me.Fake.fake_user!()
+
+      for user <- [bob, carol] do
+        {:ok, _} =
+          Bonfire.Notify.NativePush.register(user, %{provider: "apns", token: "t-#{user.id}"})
+      end
+
+      {:ok, post} =
+        Bonfire.Posts.publish(
+          current_user: alice,
+          post_attrs: %{post_content: %{html_body: "Cheap viagra here"}},
+          boundary: "public"
+        )
+
+      activity = e(post, :activity, nil)
+      job = %{recipients: [%{"user_id" => bob.id}, %{"user_id" => carol.id}], feeds: []}
+
+      # the positive first: nobody filters anything, both phones get it
+      assert {:ok, %{deliveries: 2}} = FanOut.notify(activity, job)
+
+      {:ok, _} =
+        Bonfire.Boundaries.BlockKeywords.put_block_keywords_settings(["viagra"],
+          current_user: bob
+        )
+
+      bobs_feed = Feeds.my_feed_id(:notifications, bob)
+      :ok = Bonfire.Common.PubSub.subscribe("unseen_count:#{bobs_feed}", current_user: bob)
+
+      assert {:ok, %{deliveries: 1}} = FanOut.notify(activity, job),
+             "bob filters \"viagra\", so it reaches none of his devices"
+
+      assert_receive {{Bonfire.Social.Feeds, :count_increment}, %{feed_id: ^bobs_feed}},
+                     500,
+                     "it still counts in bob's notifications"
+
+      # 2 from the first notify, 1 from the second, which is carol's
+      assert %{carol.id => 2, bob.id => 1} ==
+               deliver_jobs() |> Enum.map(&e(&1, :args, "user_id", nil)) |> Enum.frequencies()
+    end
+
     # an audience that isn't relative to the reader is one condition shared by everyone who hides it
     test "a like from a user new to this server reaches no device of someone hiding new accounts",
          %{alice: alice, bob: bob} do
