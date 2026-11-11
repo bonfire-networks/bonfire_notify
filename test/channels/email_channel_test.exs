@@ -182,6 +182,8 @@ defmodule Bonfire.Notify.EmailChannelTest do
       assert_email_sent(fn email ->
         refute email.subject =~ "requested to follow"
         assert email.subject =~ "wants to quote your post"
+        # opens where it can be accepted or declined
+        assert email.html_body =~ "/notifications/requests"
       end)
     end
 

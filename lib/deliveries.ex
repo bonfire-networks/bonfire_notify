@@ -34,19 +34,27 @@ defmodule Bonfire.Notify.Deliveries do
     languages = Map.new(recipients, fn {user, _feed} -> {Types.uid(user), language_of(user)} end)
     users = Map.new(recipients, fn {user, _feed} -> {Types.uid(user), user} end)
     about_id = Content.about_id(activity)
+    subject_id = e(activity, :subject_id, nil)
 
     jobs =
       targets
-      # what it says turns on the language, what it was to the recipient, and whether it is about them ("replied to you" or "replied to a discussion"), so it is assembled once per combination rather than once per recipient
+      # what it says turns on the language, what it was to the recipient, and what they are to it (who did it, who it is about: "You are now following", "replied to you" or "replied to a discussion"), so it is assembled once per combination rather than once per recipient
       |> Enum.group_by(fn target ->
         user_id = e(target, :user_id, nil)
 
-        {languages[user_id], e(target, :experience, nil),
-         not is_nil(user_id) and user_id == about_id}
+        role =
+          cond do
+            is_nil(user_id) -> :other
+            user_id == subject_id -> :subject
+            user_id == about_id -> :object
+            true -> :other
+          end
+
+        {languages[user_id], e(target, :experience, nil), role}
       end)
-      |> Enum.flat_map(fn {{language, experience, about_reader?}, its_targets} ->
+      |> Enum.flat_map(fn {{language, experience, role}, its_targets} ->
         %{content: content, opts: send_opts} =
-          assembled_in(language, activity, experience, about_reader?)
+          assembled_in(language, activity, experience, role)
 
         {now, queued} = Enum.split_with(its_targets, &immediate?/1)
 
@@ -116,8 +124,8 @@ defmodule Bonfire.Notify.Deliveries do
     end
   end
 
-  defp assembled_in(language, activity, experience, about_reader?),
-    do: in_locale(language, fn -> Content.for_delivery(activity, experience, about_reader?) end)
+  defp assembled_in(language, activity, experience, role),
+    do: in_locale(language, fn -> Content.for_delivery(activity, experience, role) end)
 
   defp batch_size do
     Config.get([__MODULE__, :batch_size], 500,

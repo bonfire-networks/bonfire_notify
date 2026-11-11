@@ -48,7 +48,9 @@ defmodule Bonfire.Notify.Worker do
 
   Inserts through `TestInstanceRepo.oban_insert/1` rather than `Oban.insert/1`, which picks the Oban instance belonging to the current repo context: in federation tests two instances run side by side and the bare call would enqueue into the wrong one.
   """
-  def enqueue_fan_out(activity_id, notifying) when is_binary(activity_id) do
+  def enqueue_fan_out(activity_id, notifying, opts \\ [])
+
+  def enqueue_fan_out(activity_id, notifying, opts) when is_binary(activity_id) do
     %{
       "op" => "fan_out",
       "activity_id" => activity_id,
@@ -64,7 +66,9 @@ defmodule Bonfire.Notify.Worker do
       # who of them wrote the post they follow a discussion by, so a reply is Replies to them and a followed discussion to the others (`FanOut`). Absent where the write path didn't say, and then a reply stays one
       "wrote_above" => e(notifying, :wrote_above, nil)
     }
-    |> new()
+    # |> new()
+    # `opts` may carry `scheduled_at:`, to run the fan-out at a later date
+    |> new(Keyword.take(opts, [:scheduled_at]))
     |> Bonfire.Common.TestInstanceRepo.oban_insert()
     |> debug("enqueued a notify fan_out")
   rescue
@@ -73,7 +77,7 @@ defmodule Bonfire.Notify.Worker do
       :skip
   end
 
-  def enqueue_fan_out(activity_id, notifying) do
+  def enqueue_fan_out(activity_id, notifying, _opts) do
     error(activity_id, "Cannot notify #{inspect(notifying)} without an activity id")
     :skip
   end

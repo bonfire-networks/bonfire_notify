@@ -23,7 +23,7 @@ defmodule Bonfire.Notify.Content do
 
   With the `experience` it was to its recipients (what the fan-out grouped them by) and whether it is about them (`about_id/1`), the title says it in the words of their notifications feed ("mentioned you", "replied to you"), from the phrase the category declares for it (`Bonfire.Social.Notifications.phrase_for/3`), and otherwise with the plain verb.
   """
-  def for_delivery(activity, experience \\ nil, about_reader? \\ false) do
+  def for_delivery(activity, experience \\ nil, role \\ :other) do
     activity = preloaded(activity)
     object = e(activity, :object, nil)
     verb = verb_of(activity, object)
@@ -42,7 +42,7 @@ defmodule Bonfire.Notify.Content do
             not preview? ->
               private_phrase(subject_name(subject), verb)
 
-            phrase = experience && phrase_for(experience, about_reader?) ->
+            phrase = experience && phrase_for(experience, role) ->
               "#{subject_name(subject)} #{phrase}"
 
             true ->
@@ -78,8 +78,8 @@ defmodule Bonfire.Notify.Content do
   end
 
   # asked rather than called, since this extension doesn't depend on `bonfire_social`, which owns the categories and their phrases
-  defp phrase_for(experience, about_reader?) do
-    maybe_apply(Bonfire.Social.Notifications, :phrase_for, [experience, about_reader?, nil],
+  defp phrase_for(experience, role) do
+    maybe_apply(Bonfire.Social.Notifications, :phrase_for, [experience, role, nil, nil],
       fallback_return: nil
     )
   end

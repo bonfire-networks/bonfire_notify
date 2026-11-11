@@ -501,6 +501,36 @@ defmodule Bonfire.Notify.FanOutTest do
       title = e(job, :args, "payload", "title", nil)
       assert title =~ "requested to join"
       refute title =~ "requested to follow"
+
+      # a request opens where it can be accepted or declined, not at the group
+      assert e(job, :args, "payload", "url", nil) == "/notifications/requests"
+    end
+
+    test "a request to follow is pushed with a link to where it can be accepted" do
+      configure_native_push()
+
+      private =
+        Bonfire.Me.Fake.fake_user!(Bonfire.Me.Fake.fake_account!(), %{},
+          request_before_follow: true
+        )
+
+      asker = Bonfire.Me.Fake.fake_user!()
+
+      {:ok, request} = Bonfire.Social.Graph.Follows.follow(asker, private)
+
+      {:ok, activity} =
+        Bonfire.Social.Activities.get(Bonfire.Common.Types.uid(request),
+          skip_boundary_check: true
+        )
+
+      {:ok, _} =
+        Bonfire.Notify.NativePush.register(private, %{provider: "apns", token: "t-#{private.id}"})
+
+      assert {:ok, %{deliveries: 1}} =
+               FanOut.notify(activity, %{recipients: [%{"user_id" => private.id}], feeds: []})
+
+      assert [job] = deliver_jobs()
+      assert e(job, :args, "payload", "url", nil) == "/notifications/requests"
     end
 
     # what a follow is about, to the one followed, is who followed them, as its row and its body already say
@@ -546,6 +576,87 @@ defmodule Bonfire.Notify.FanOutTest do
       assert deliver_jobs() == [],
              "queued means later: nothing is delivered until the job runs"
     end
+  end
+
+  # a post scheduled for later: the notifications feed row exists at once but is hidden by date, push and the rest wait for the date like federation does
+  test "a post scheduled for later notifies a mentioned local user at its date, not at publish time",
+       %{
+         alice: alice,
+         bob: bob
+       } do
+    import Ecto.Query
+
+    configure_native_push()
+
+    {:ok, _} = Bonfire.Notify.NativePush.register(bob, %{provider: "apns", token: "t-#{bob.id}"})
+
+    future = DateTime.utc_now() |> DateTime.add(7, :day)
+
+    # the setup's public post queued its own federation job, so only the jobs this publish adds count
+    federation_jobs = fn ->
+      Bonfire.Common.Repo.all(
+        from(j in Oban.Job, where: j.worker == "ActivityPub.Federator.Workers.PublisherWorker")
+      )
+    end
+
+    already_queued = Enum.map(federation_jobs.(), & &1.id)
+
+    {:ok, post} =
+      Bonfire.Posts.publish(
+        current_user: alice,
+        post_attrs: %{
+          post_content: %{html_body: "scheduled, hello @#{bob.character.username}"},
+          scheduled_at: DateTime.to_iso8601(future)
+        },
+        boundary: "public"
+      )
+
+    {:ok, ulid_ts} = Needle.ULID.timestamp(post.id)
+    assert ulid_ts > DateTime.to_unix(DateTime.utc_now(), :millisecond), "the post is scheduled"
+
+    # (a) the notifications feed row exists now
+    bobs_feed = Feeds.my_feed_id(:notifications, bob)
+
+    assert Bonfire.Common.Repo.exists?(
+             from(fp in Bonfire.Data.Social.FeedPublish,
+               where: fp.id == ^post.id and fp.feed_id == ^bobs_feed
+             )
+           ),
+           "no notifications feed row for the mentioned user"
+
+    # (b) nothing is delivered now: one fan_out job waits for the post's date
+    assert deliver_jobs() == []
+    activity_id = e(post, :activity, :id, nil) || post.id
+
+    assert [fan_out] =
+             Enum.filter(
+               enqueued_ops("fan_out"),
+               &(e(&1, :args, "activity_id", nil) == activity_id)
+             )
+
+    assert DateTime.compare(fan_out.scheduled_at, DateTime.utc_now()) == :gt
+    assert DateTime.diff(fan_out.scheduled_at, future, :second) |> abs() < 5
+
+    # (b2) the feed read hides the post until its date
+    refute Bonfire.Social.FeedLoader.feed_contains?(:notifications, post, current_user: bob),
+           "the scheduled post is listed in the mentioned user's notifications early"
+
+    # (b3) when the job runs, the delivery is queued
+    assert :ok =
+             Oban.Testing.perform_job(Bonfire.Notify.Worker, fan_out.args,
+               repo: Bonfire.Common.Repo
+             )
+
+    assert [deliver] = deliver_jobs()
+    assert e(deliver, :args, "user_id", nil) == bob.id
+
+    # (c) federation is queued for the date, none now
+    assert [federation_job] = Enum.reject(federation_jobs.(), &(&1.id in already_queued))
+
+    assert DateTime.compare(federation_job.scheduled_at, DateTime.utc_now()) == :gt,
+           "the post is federated at publish time"
+
+    assert DateTime.diff(federation_job.scheduled_at, future, :second) |> abs() < 5
   end
 
   defp enqueued_ops(op) do
