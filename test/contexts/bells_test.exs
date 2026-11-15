@@ -342,6 +342,113 @@ defmodule Bonfire.Notify.BellsTest do
       end
     end
 
+    test "with the bell on the group and on its topic, a post in the topic is in the notifications once",
+         %{author: author, group: group, reader: reader} do
+      member(group, reader)
+
+      topic =
+        Bonfire.Classify.Simulate.fake_category!(author, group, %{type: :topic, name: "A topic"})
+
+      assert {:ok, _} = Bells.enable(reader, group)
+      assert {:ok, _} = Bells.enable(reader, topic)
+
+      post =
+        Bonfire.Classify.Simulate.fake_post_in_group!(member(group), topic, "<p>in the topic</p>")
+
+      # the positive first: it did reach the reader
+      assert notified?(reader, post)
+
+      about_the_post =
+        Bonfire.Social.FeedLoader.feed(:notifications, %{feed_name: :notifications},
+          current_user: reader
+        )
+        |> e(:edges, [])
+        |> Enum.map(&(e(&1, :activity, nil) || &1))
+        |> Enum.filter(&(e(&1, :object_id, nil) == Bonfire.Common.Types.uid(post)))
+
+      assert [_] = about_the_post,
+             "expected one notification for the post, got #{length(about_the_post)}: #{inspect(Enum.map(about_the_post, &e(&1, :verb_id, nil)))}"
+    end
+
+    # a member who follows the group (joining follows it), with or without a bell on it, is not told of their own post, in the group or in a topic of it
+    for bell? <- [false, true] do
+      test "a member's own post in the group and in its topic is not in their notifications (bell on the group: #{bell?})",
+           %{author: author, group: group, reader: reader} do
+        poster = member(group)
+        member(group, reader)
+
+        topic =
+          Bonfire.Classify.Simulate.fake_category!(author, group, %{
+            type: :topic,
+            name: "A topic"
+          })
+
+        if unquote(bell?) do
+          assert {:ok, _} = Bells.enable(reader, group)
+          assert {:ok, _} = Bells.enable(poster, group)
+          assert {:ok, _} = Bells.enable(poster, topic)
+        end
+
+        in_group =
+          Bonfire.Classify.Simulate.fake_post_in_group!(poster, group, "<p>mine, in group</p>")
+
+        in_topic =
+          Bonfire.Classify.Simulate.fake_post_in_group!(poster, topic, "<p>mine, in topic</p>")
+
+        # the positive first: with the bell on, the other member is notified
+        if unquote(bell?), do: assert(notified?(reader, in_group))
+
+        mine =
+          Bonfire.Social.FeedLoader.feed(:notifications, %{feed_name: :notifications},
+            current_user: poster
+          )
+          |> e(:edges, [])
+          |> Enum.map(&(e(&1, :activity, nil) || &1))
+          |> Enum.filter(
+            &(e(&1, :object_id, nil) in [
+                Bonfire.Common.Types.uid(in_group),
+                Bonfire.Common.Types.uid(in_topic)
+              ])
+          )
+          |> Bonfire.Common.Repo.maybe_preload([:verb, subject: [:profile]])
+
+        assert [] ==
+                 Enum.map(mine, fn a ->
+                   {e(a, :verb, :verb, nil), e(a, :subject, :profile, :name, nil),
+                    e(a, :object_id, nil)}
+                 end)
+      end
+    end
+
+    # Commented out: it called `Boosts.boost/3` directly, but a remote group's boost of a post published in it skips notifying the author only on the incoming `Announce` path (`Boosts.ap_receive_activity/3`), so this asserted something that path never does. Covered through that real path, with the post in the group and in another one, in `bonfire_federate_activitypub/test/interop/group_announces_our_post_test.exs`.
+    # # what a remote group's `Announce` of a member's post ends in (`Boosts.ap_receive_activity/3` calls `boost/3` with `local: false`, and notifies the creator unless told not to), which is how a post of ours in a remote group comes back
+    # test "the group boosting a member's own post (as a remote group's Announce does) does not notify the member",
+    #      %{group: group} do
+    #   poster = member(group)
+    #   post = Bonfire.Classify.Simulate.fake_post_in_group!(poster, group, "<p>mine</p>")
+    #
+    #   # the positive first: another person's boost of it does notify the author
+    #   {:ok, _} = Bonfire.Social.Boosts.boost(fake_user!(), post)
+    #   assert notified?(poster, post)
+    #
+    #   # a local group has boosted it already, whereas a remote group's boost only comes with its `Announce`, so take ours back first
+    #   {:ok, _} = Bonfire.Social.Boosts.unboost(group, post)
+    #   {:ok, _} = Bonfire.Social.Boosts.boost(group, post, local: false)
+    #
+    #   boosts_by_group =
+    #     Bonfire.Social.FeedLoader.feed(:notifications, %{feed_name: :notifications},
+    #       current_user: poster
+    #     )
+    #     |> e(:edges, [])
+    #     |> Enum.map(&(e(&1, :activity, nil) || &1))
+    #     |> Enum.filter(
+    #       &(e(&1, :object_id, nil) == Bonfire.Common.Types.uid(post) and
+    #           e(&1, :subject_id, nil) == Bonfire.Common.Types.uid(group))
+    #     )
+    #
+    #   assert [] == Enum.map(boosts_by_group, &{e(&1, :verb_id, nil), e(&1, :subject_id, nil)})
+    # end
+
     test "without the bell, a post in the group does not notify", %{group: group, reader: reader} do
       member(group, reader)
 

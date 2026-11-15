@@ -57,16 +57,30 @@ defmodule Bonfire.Notify.Web.BellButtonLive do
 
     if e(assigns(socket), :enabled, false) == true do
       Bells.disable(user, object)
+      maybe_offer_group_topics(socket, user, object, :unbell)
       {:noreply, assign(socket, enabled: false)}
     else
       case Bells.enable(user, object) do
         {:ok, _} ->
+          maybe_offer_group_topics(socket, user, object, :bell)
           {:noreply, assign(socket, enabled: true)}
 
         other ->
           error(other, "Could not enable the bell")
           {:noreply, assign_error(socket, l("Could not turn on notifications for their posts"))}
       end
+    end
+  end
+
+  # a bell covers only what it is on, so a group's topics are offered their own, after the group's. Asked rather than called: this extension does not depend on classify
+  defp maybe_offer_group_topics(socket, user, object, mode) do
+    if e(object, :type, nil) == :group do
+      maybe_apply(
+        Bonfire.Classify.Web.GroupTopicsPickerLive,
+        :open,
+        [user, object, mode, Bonfire.UI.Common.ReusableModalLive.modal_id(assigns(socket))],
+        fallback_return: nil
+      )
     end
   end
 

@@ -151,6 +151,125 @@ defmodule Bonfire.Notify.BellButtonTest do
     assert Bells.enabled?(reader, group)
   end
 
+  # a bell covers only what it is on, so after the group's own bell a modal offers its topics' bells, none ticked, with those already ringing shown ticked and locked
+  test "the bell on a group with topics offers their bells, and rings only the ticked ones", %{
+    conn: conn,
+    reader: reader,
+    author: author
+  } do
+    group =
+      Bonfire.Classify.Simulate.fake_group!(author, %{
+        membership: "open",
+        visibility: "global"
+      })
+
+    t1 =
+      Bonfire.Classify.Simulate.fake_category!(author, group, %{name: "Seed swap", type: :topic})
+
+    t2 =
+      Bonfire.Classify.Simulate.fake_category!(author, group, %{
+        name: "Tool library",
+        type: :topic
+      })
+
+    t3 =
+      Bonfire.Classify.Simulate.fake_category!(author, group, %{name: "Bee keeping", type: :topic})
+
+    {:ok, _} = Bells.enable(reader, t3)
+
+    conn
+    |> visit("/group/#{group.id}")
+    |> wait_async()
+    |> click_button("[data-role=bell_button] button", "Notify me about new posts")
+    |> assert_has("[data-role=group_topics_picker]", text: "Seed swap")
+    |> assert_has("[data-role=group_topics_picker]", text: "Tool library")
+    # already ringing: the bell in its on state, not a locked checkbox
+    |> assert_has(
+      "[data-role=group_topics_picker] [data-topic-id='#{t3.id}'] [data-role=bell_button]",
+      text: "Stop notifying me"
+    )
+    |> refute_has("[data-role=group_topics_picker] input[type=checkbox][disabled]")
+    |> check("Seed swap")
+    |> click_button("[data-role=group_topics_picker_submit]", "Notify me")
+
+    assert Bells.enabled?(reader, group)
+    assert Bells.enabled?(reader, t1)
+    refute Bells.enabled?(reader, t2)
+    assert Bells.enabled?(reader, t3)
+  end
+
+  test "turning the bell off on a group lists the topics whose bell is on, to stop those too", %{
+    conn: conn,
+    reader: reader,
+    author: author
+  } do
+    group =
+      Bonfire.Classify.Simulate.fake_group!(author, %{
+        membership: "open",
+        visibility: "global"
+      })
+
+    t1 =
+      Bonfire.Classify.Simulate.fake_category!(author, group, %{name: "Seed swap", type: :topic})
+
+    _t2 =
+      Bonfire.Classify.Simulate.fake_category!(author, group, %{
+        name: "Tool library",
+        type: :topic
+      })
+
+    {:ok, _} = Bells.enable(reader, group)
+    {:ok, _} = Bells.enable(reader, t1)
+
+    conn
+    |> visit("/group/#{group.id}")
+    |> wait_async()
+    |> click_button("[data-role=bell_button] button", "Stop notifying me")
+    |> assert_has("[data-role=group_topics_picker]", text: "Seed swap")
+    |> refute_has("[data-role=group_topics_picker]", text: "Tool library")
+
+    refute Bells.enabled?(reader, group), "control: the group's own bell went off"
+  end
+
+  # a mirrored topic's posts only arrive through a follow: it is listed with the Follow button and a locked bell checkbox, which unlocks once the Follow is sent
+  test "in the bell modal, following a mirrored topic unlocks its bell", %{
+    conn: conn,
+    reader: reader,
+    author: author
+  } do
+    group =
+      Bonfire.Classify.Simulate.fake_group!(author, %{
+        membership: "open",
+        visibility: "global"
+      })
+
+    topic =
+      Bonfire.Classify.Simulate.fake_category!(author, group, %{name: "Over there", type: :topic})
+
+    assert {:ok, _} =
+             Bonfire.Federate.ActivityPub.Peered.save_canonical_uri(
+               topic,
+               "https://elsewhere.local/c/over-there"
+             )
+
+    row = "[data-role=group_topics_picker] [data-topic-id='#{topic.id}']"
+
+    conn
+    |> visit("/group/#{group.id}")
+    |> wait_async()
+    |> click_button("[data-role=bell_button] button", "Notify me about new posts")
+    |> assert_has("#{row} [data-id=follow]")
+    |> assert_has("#{row} input[type=checkbox][disabled]")
+    |> click_button("#{row} [data-id=follow]", "")
+    |> assert_has("#{row} [data-id=unfollow]")
+    |> refute_has("#{row} input[type=checkbox][disabled]")
+    |> check("Over there")
+    |> click_button("[data-role=group_topics_picker_submit]", "Notify me")
+
+    assert Bonfire.Social.Requests.requested?(reader, Bonfire.Data.Social.Follow, topic)
+    assert Bells.enabled?(reader, topic)
+  end
+
   # TODO: a remote group has no bell until you join it, as a remote person's until you follow them (needs remote fixtures)
 
   # TODO: a remote person's profile has no bell until you follow them, since their posts only reach us through a follow (needs a remote user fixture)

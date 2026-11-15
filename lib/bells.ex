@@ -2,7 +2,7 @@ defmodule Bonfire.Notify.Bells do
   @moduledoc """
   Bells: someone asking to be notified about what happens on a person, a group or a thread (`Bonfire.Notify.Data.Bell`).
 
-  Off until the person enables one: following or joining never does. What a bell covers comes from what it is on: a person's or group's new posts, or a thread's replies. The fan-out asks `subscribers/2` on every publish, so the post's own activity lands in each subscriber's notifications, and everything after that (preferences, delivery, seen state) is what any notification gets.
+  Off until the person enables one: following or joining never does. What a bell covers comes from what it is on: a person's or group's new posts, or a thread's replies. A bell covers only what it is on: one on a group is not told of posts in the group's topics, which have bells of their own (a post in a topic is tagged with the topic, not its group). Someone with a bell on both a group and its topic is notified once per post, as subscribers are deduplicated. The fan-out asks `subscribers/2` on every publish, so the post's own activity lands in each subscriber's notifications, and everything after that (preferences, delivery, seen state) is what any notification gets.
 
   Edges are built and deleted through `Bonfire.Social.Edges`, asked rather than called since this extension does not depend on `bonfire_social`, and without it there is nothing to be notified about.
   """
