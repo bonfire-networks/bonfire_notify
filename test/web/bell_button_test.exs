@@ -131,6 +131,35 @@ defmodule Bonfire.Notify.BellButtonTest do
     assert Bells.enabled?(reader, root)
   end
 
+  # a reply in a direct message reaches everyone in it by being addressed to them, which a bell doesn't change, so it has none
+  test "a direct message thread has no bell, in the page header or in a reply's menu", %{
+    conn: conn,
+    reader: reader,
+    author: author
+  } do
+    {:ok, root} =
+      Bonfire.Messages.send(author, %{post_content: %{html_body: "a private start"}}, [reader])
+
+    {:ok, reply} =
+      Bonfire.Messages.send(
+        author,
+        %{post_content: %{html_body: "a private answer"}, reply_to_id: root.id},
+        [reader]
+      )
+
+    {:ok, view, _html} = live(conn, "/discussion/#{root.id}")
+    render_async(view)
+
+    reply_menu = "[data-object_id='#{reply.id}']"
+
+    # the positive first: the thread and the reply's menu are there
+    assert has_element?(view, "[data-id=object_body]", "a private answer")
+    assert has_element?(view, "#{reply_menu} [data-id=more_menu]")
+
+    refute has_element?(view, "[data-role=bell_button]")
+    refute has_element?(view, "#{reply_menu} [data-role=bell_menu_item]")
+  end
+
   test "a local group has a bell for its new posts, without joining it", %{
     conn: conn,
     reader: reader,

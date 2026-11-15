@@ -91,7 +91,7 @@ defmodule Bonfire.Notify.AdminBroadcastUITest do
       non_member = fake_user!()
 
       {:ok, circle} = Circles.create(admin, %{named: %{name: "VIPs #{System.unique_integer()}"}})
-      {:ok, _} = Circles.add_to_circles(circle_member, circle)
+      {:ok, _} = Circles.add_to_circles(circle_member, circle, skip_boundary_check: true)
 
       content = "VIP announcement #{System.unique_integer()}"
 
@@ -116,7 +116,7 @@ defmodule Bonfire.Notify.AdminBroadcastUITest do
       {:ok, circle} =
         Circles.create(:instance, %{named: %{name: "Mods #{System.unique_integer()}"}})
 
-      {:ok, _} = Circles.add_to_circles(circle_member, circle)
+      {:ok, _} = Circles.add_to_circles(circle_member, circle, skip_boundary_check: true)
 
       content = "Moderator announcement #{System.unique_integer()}"
 

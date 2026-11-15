@@ -640,6 +640,44 @@ defmodule Bonfire.Notify.DigestTest do
     )
   end
 
+  test "a post the reader was mentioned in but can no longer read is not in the digest", %{
+    account: account,
+    bob: bob,
+    alice: alice
+  } do
+    mention = fn text ->
+      {:ok, post} =
+        Bonfire.Posts.publish(
+          current_user: alice,
+          post_attrs: %{post_content: %{html_body: "#{text} @#{bob.character.username}"}},
+          boundary: "mentions"
+        )
+
+      post
+    end
+
+    readable = mention.("Still readable zk41")
+    withdrawn = mention.("Withdrawn secret zk42")
+
+    assert {:ok, _} =
+             Bonfire.Boundaries.set_boundaries(alice, withdrawn, to_boundaries: "private")
+
+    assert Bonfire.Boundaries.can?(bob, :read, readable)
+    refute Bonfire.Boundaries.can?(bob, :read, withdrawn)
+    flush_sent_emails()
+
+    assert {:ok, _} = Digest.send_now(account)
+
+    assert_email_sent(fn email ->
+      assert email.text_body =~ "Still readable zk41"
+
+      for body <- [email.text_body, email.html_body] do
+        refute body =~ "Withdrawn secret zk42"
+        refute body =~ withdrawn.id
+      end
+    end)
+  end
+
   defp assert_about(at, expected) do
     assert abs(DateTime.diff(at, expected, :second)) < 60,
            "expected about #{expected}, got #{at}"

@@ -6,7 +6,7 @@ defmodule Bonfire.Notify.Test.FakeHelpers do
 
   def fake_admin!(account \\ %{}, attrs \\ %{}, opts \\ []) do
     user = Fake.fake_user!(account, attrs, opts)
-    {:ok, user} = Users.make_admin(user)
+    {:ok, user} = Users.make_admin(user, skip_boundary_check: true)
     user
   end
 

@@ -16,7 +16,8 @@ defmodule Bonfire.Notify.BroadcastTest do
       {:ok, _} =
         Bonfire.Boundaries.Circles.add_to_circles(
           mod,
-          Bonfire.Boundaries.Scaffold.Instance.mod_circle()
+          Bonfire.Boundaries.Scaffold.Instance.mod_circle(),
+          skip_boundary_check: true
         )
 
       local_user = fake_user!()
@@ -155,7 +156,7 @@ defmodule Bonfire.Notify.BroadcastTest do
       non_member = fake_user!()
 
       {:ok, circle} = Circles.create(admin, %{named: %{name: "VIPs"}})
-      {:ok, _} = Circles.add_to_circles(circle_member, circle)
+      {:ok, _} = Circles.add_to_circles(circle_member, circle, skip_boundary_check: true)
 
       attrs = %{
         post: %{post_content: %{html_body: "VIP announcement"}},
@@ -177,7 +178,7 @@ defmodule Bonfire.Notify.BroadcastTest do
       non_member = fake_user!()
 
       {:ok, circle} = Circles.create(:instance, %{named: %{name: "Moderators"}})
-      {:ok, _} = Circles.add_to_circles(circle_member, circle)
+      {:ok, _} = Circles.add_to_circles(circle_member, circle, skip_boundary_check: true)
 
       attrs = %{
         post: %{post_content: %{html_body: "Moderator-only announcement"}},

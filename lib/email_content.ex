@@ -96,7 +96,16 @@ defmodule Bonfire.Notify.EmailContent do
     Bonfire.Common.Utils.maybe_apply(
       Bonfire.Social.FeedLoader,
       :map_activity_preloads,
-      [[:feed, :feed_metadata, :feed_postload, :with_request_edge, :sensitivity]],
+      [
+        [
+          :feed,
+          :feed_metadata,
+          :feed_postload,
+          :with_thread_name,
+          :with_request_edge,
+          :sensitivity
+        ]
+      ],
       fallback_return: []
     )
   end
