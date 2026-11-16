@@ -120,6 +120,25 @@ defmodule Bonfire.Notify.DigestTest do
     end)
   end
 
+  # the rows are rendered fragments put into the email as they are, so what a person wrote must already be safe in them
+  test "a script or handler in a post's text never reaches the email's HTML", %{
+    account: account,
+    bob: bob,
+    alice: alice
+  } do
+    liked(alice, bob, ~s|visible words <script>alert(1)</script><img src=x onerror="alert(2)">|)
+
+    assert {:ok, _} = Digest.send_now(account)
+
+    assert_email_sent(fn email ->
+      assert email.html_body =~ "visible words", "control: the post's text is in the email"
+      refute email.html_body =~ "<script"
+      refute email.html_body =~ "onerror"
+      # `assert_email_sent/1` wants a truthy result, and `refute` returns nil
+      true
+    end)
+  end
+
   test "each notification is a block of its own, and each part of it a line of its own", %{
     account: account,
     bob: bob,

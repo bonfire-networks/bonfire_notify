@@ -19,7 +19,7 @@ defmodule Bonfire.Notify.Repo.Migrations.FoldNativePushDevices do
 
   def up do
     if table_exists?(FoldNativeDevices.table()) do
-      DataMigration.Runner.run(FoldNativeDevices)
+      DataMigration.Runner.run(FoldNativeDevices, repo: repo())
 
       drop_if_exists(table(FoldNativeDevices.table()))
     end

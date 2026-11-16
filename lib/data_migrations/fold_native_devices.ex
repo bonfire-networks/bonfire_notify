@@ -49,30 +49,32 @@ defmodule Bonfire.Notify.DataMigrations.FoldNativeDevices do
     }
   end
 
-  def migrate(rows) do
-    owners = existing_owners(rows)
+  @doc "Folds `rows` in the repo given as `opts[:repo]` (a migration passes the one it runs on), else the normal one."
+  def migrate(rows, opts \\ []) do
+    repo = Keyword.get(opts, :repo, Bonfire.Common.Repo)
+    owners = existing_owners(rows, repo)
 
     Enum.each(rows, fn row ->
       if MapSet.member?(owners, row.user_id),
-        do: fold(row),
+        do: fold(row, repo),
         # a subscription needs somebody to belong to, and the mixin's foreign key would raise rather than refuse, taking the whole batch with it. The row goes away with the table
         else: warn(row.user_id, "Native push device belongs to nobody, so leaving it behind")
     end)
   end
 
   # one query per batch rather than one per row, and the only thing that can make a row unfoldable
-  defp existing_owners(rows) do
+  defp existing_owners(rows, repo) do
     ids = rows |> Enum.map(& &1.user_id) |> Enum.uniq()
 
     from(p in Needle.Pointer, where: p.id in ^ids, select: p.id)
-    |> Bonfire.Common.Repo.all()
+    |> repo.all()
     |> MapSet.new()
   end
 
-  defp fold(row) do
+  defp fold(row, repo) do
     with {:ok, device} <- NativePushDevice.find_or_create(device_attrs(row)),
          {:ok, _link} <- UserPushSubscription.upsert(row.user_id, device.id, link_attrs(row)) do
-      delete(row.id)
+      delete(row.id, repo)
     else
       other ->
         warn(other, "Could not fold native push device #{inspect(row.id)}, so leaving it behind")
@@ -96,8 +98,8 @@ defmodule Bonfire.Notify.DataMigrations.FoldNativeDevices do
   # the old table kept an `alerts` map that nothing read, so only the policy carries over
   defp link_attrs(row), do: %{policy: row.policy}
 
-  defp delete(id) do
+  defp delete(id, repo) do
     from(d in @table, where: d.id == ^id)
-    |> Bonfire.Common.Repo.delete_all()
+    |> repo.delete_all()
   end
 end
