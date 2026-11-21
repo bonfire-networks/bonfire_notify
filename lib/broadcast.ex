@@ -43,7 +43,7 @@ defmodule Bonfire.Notify.Broadcast do
   end
 
   defp check_permission(admin) do
-    if Bonfire.Me.Accounts.is_admin?(admin) ||
+    if Bonfire.Me.Accounts.is_admin!(admin) ||
          Bonfire.Boundaries.can?(admin, :moderate, :instance) do
       :ok
     else
