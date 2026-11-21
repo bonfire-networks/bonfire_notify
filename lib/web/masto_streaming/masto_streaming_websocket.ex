@@ -443,15 +443,12 @@ defmodule Bonfire.Notify.Web.MastoStreamingWebSocket do
   defp emit_notification_and_maybe_update(stream_name, activity, state, acc) do
     stream_arr = to_stream_array(stream_name)
 
-    # named once, as the notification list and push name it, for both events
+    # the notification types itself, through the list's candidate (`EventFormatter.format_notification/2`); named here only to decide whether an `update` goes with it
     notification_type =
       Bonfire.API.MastoCompat.Mappers.Notification.type_for(activity, state.user)
 
     acc =
-      case EventFormatter.format_notification(activity,
-             current_user: state.user,
-             notification_type: notification_type
-           ) do
+      case EventFormatter.format_notification(activity, current_user: state.user) do
         {:ok, payload} ->
           frame = EventFormatter.to_ws_frame(stream_arr, "notification", payload)
           [frame | acc]

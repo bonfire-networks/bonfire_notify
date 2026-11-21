@@ -2,9 +2,10 @@ defmodule Bonfire.Notify.MastoStreaming.EventFormatter do
   @moduledoc """
   Formats PubSub activity data into Mastodon WebSocket streaming JSON frames.
 
-  Delegates to `Bonfire.API.MastoCompat.Mappers.Status` and
-  `Bonfire.API.MastoCompat.Mappers.Account` for consistent serialization,
-  using `lightweight: true` to skip DB queries unsuitable for the WebSocket process.
+  A status or a notification is read through GraphQL with the published activity as root
+  (`Bonfire.API.MastoCompat.Helpers.run_published/4`), with the selection the timeline and the
+  notification list use, then mapped by the same mappers, so a streamed entity is what a fetched
+  one is. A conversation's accounts still map the struct (`Mappers.Account`).
 
   ## Wire format (per Mastodon WebSocket spec)
 
@@ -22,13 +23,12 @@ defmodule Bonfire.Notify.MastoStreaming.EventFormatter do
   @doc """
   Format an activity as a Mastodon `update` event (status JSON).
 
-  Delegates to `Mappers.Status.from_activity/2` with `lightweight: true`
-  to avoid DB queries in the WebSocket process.
+  Read through GraphQL with the activity as root (`published_status/2`).
 
   Returns `{:ok, json_string}` or `:skip` if the activity can't be mapped.
   """
   def format_update(activity, opts \\ []) do
-    case lightweight_status_map(activity, opts) do
+    case status_map(activity, opts) do
       %{"id" => id} = status when not is_nil(id) -> {:ok, Jason.encode!(status)}
       _ -> :skip
     end
@@ -44,16 +44,20 @@ defmodule Bonfire.Notify.MastoStreaming.EventFormatter do
   Returns `{:ok, json_string}` or `:skip` if the activity can't be mapped.
   """
   def format_notification(activity, opts \\ []) do
-    notification_type =
-      opts[:notification_type] || Mappers.Notification.type_for(activity, opts[:current_user])
+    current_user = opts[:current_user]
 
-    # built by the mapper the notification list uses, so a streamed notification carries what a fetched one does, including what is particular to a kind (a quote's status is the quoting post, and its account that post's author)
+    # the list's candidate and mapper, so a streamed notification is what a fetched one is (a quote's status is the quoting post, read as the viewer)
     notification =
-      notification_type &&
-        Mappers.Notification.from_activity(
-          activity,
-          Keyword.merge(opts, notification_type: notification_type, lightweight: true)
-        )
+      case Bonfire.Social.API.GraphQLMasto.Notifications.published_candidate(
+             activity,
+             current_user
+           ) do
+        %{} = candidate ->
+          Mappers.Notification.from_candidate(candidate, current_user: current_user)
+
+        _ ->
+          nil
+      end
 
     case notification do
       %{} = notification ->
@@ -66,7 +70,7 @@ defmodule Bonfire.Notify.MastoStreaming.EventFormatter do
         :skip
     end
 
-    # replaced by `Mappers.Notification.from_activity/2` above, which the list uses too: this built its own, which had no account for an activity whose subject isn't a person (a quote request's is the quoting post) and took every status from the activity's own object
+    # replaced by the list's candidate and mapper above: this built its own, without an account when the subject is not a person, and took every status from the activity's object
     # if notification_type do
     #   subject = e(activity, :subject, nil)
     #
@@ -124,7 +128,7 @@ defmodule Bonfire.Notify.MastoStreaming.EventFormatter do
   defp build_conversation(thread_id, activity, opts) do
     conversation =
       minimal_conversation(thread_id)
-      |> Map.put("last_status", activity && lightweight_status_map(activity, opts))
+      |> Map.put("last_status", activity && status_map(activity, opts))
       |> Map.put("accounts", conversation_accounts(activity))
 
     {:ok, Jason.encode!(conversation)}
@@ -153,11 +157,9 @@ defmodule Bonfire.Notify.MastoStreaming.EventFormatter do
     end
   end
 
-  # Maps an activity to a lightweight Mastodon Status map (no DB queries), or nil.
-  defp lightweight_status_map(activity, opts) do
-    mapper_opts = Keyword.merge(opts, lightweight: true)
-
-    case Mappers.Status.from_activity(activity, mapper_opts) do
+  # An activity as a Mastodon Status map, through GraphQL with the activity as root, or nil.
+  defp status_map(activity, opts) do
+    case Bonfire.Social.API.GraphQLMasto.Adapter.published_status(activity, opts[:current_user]) do
       status when is_map(status) and map_size(status) > 0 ->
         Helpers.deep_struct_to_map(status, filter_nils: true, drop_unknown_structs: true)
 
