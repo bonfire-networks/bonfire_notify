@@ -85,7 +85,16 @@ defmodule Bonfire.Notify.Web.StreamingController do
 
       # Push an authoritative starting count so the badge is correct on connect
       # (not just after the next change).
-      initial_count = unseen_notifications_count(feed_id, current_user)
+      initial_count =
+        if feed_id,
+          do:
+            Bonfire.Common.Utils.maybe_apply(
+              Bonfire.Social.Notifications,
+              :unseen_count,
+              [current_user, [current_account: conn.assigns[:current_account], feed_id: feed_id]],
+              fallback_return: 0
+            ),
+          else: 0
 
       case send_unseen_count(conn, initial_count) do
         {:ok, conn} -> stream_loop(conn, initial_count)
@@ -94,20 +103,6 @@ defmodule Bonfire.Notify.Web.StreamingController do
     else
       err("[SSE] Could not resolve notification feed_id for user, closing")
       conn
-    end
-  end
-
-  defp unseen_notifications_count(nil, _current_user), do: 0
-
-  defp unseen_notifications_count(feed_id, current_user) do
-    Bonfire.Common.Utils.maybe_apply(
-      Bonfire.Social.FeedActivities,
-      :unseen_count,
-      [feed_id, [current_user: current_user]]
-    )
-    |> case do
-      count when is_integer(count) and count >= 0 -> count
-      _ -> 0
     end
   end
 
