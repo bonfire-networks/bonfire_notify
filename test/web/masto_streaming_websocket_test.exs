@@ -964,6 +964,14 @@ defmodule Bonfire.Notify.Web.MastoStreamingWebSocketTest do
           assert is_binary(conversation["last_status"]["id"])
           assert [account | _] = conversation["accounts"]
           assert is_binary(account["id"])
+
+          # read through GraphQL, as every other account (team-docs/plans/masto-pure-mappers.md, unit 3d):
+          # the stored canonical URI, as the fetched conversation shows it
+          assert account["id"] == me.id
+          assert account["username"] == me.character.username
+
+          assert account["url"] ==
+                   Bonfire.Common.URIs.base_url() <> "/pub/actors/" <> me.character.username
       after
         5_000 -> flunk("No :new_activity broadcast received within 5s")
       end

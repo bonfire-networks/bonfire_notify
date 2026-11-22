@@ -5,7 +5,7 @@ defmodule Bonfire.Notify.MastoStreaming.EventFormatter do
   A status or a notification is read through GraphQL with the published activity as root
   (`Bonfire.API.MastoCompat.Helpers.run_published/4`), with the selection the timeline and the
   notification list use, then mapped by the same mappers, so a streamed entity is what a fetched
-  one is. A conversation's accounts still map the struct (`Mappers.Account`).
+  one is. A conversation's sender is read by id through GraphQL (`Bonfire.API.MastoCompat.Accounts.by_ids/3`).
 
   ## Wire format (per Mastodon WebSocket spec)
 
@@ -126,10 +126,12 @@ defmodule Bonfire.Notify.MastoStreaming.EventFormatter do
   end
 
   defp build_conversation(thread_id, activity, opts) do
+    last_status = activity && status_map(activity, opts)
+
     conversation =
       minimal_conversation(thread_id)
-      |> Map.put("last_status", activity && status_map(activity, opts))
-      |> Map.put("accounts", conversation_accounts(activity))
+      |> Map.put("last_status", last_status)
+      |> Map.put("accounts", conversation_accounts(last_status, activity, opts))
 
     {:ok, Jason.encode!(conversation)}
   rescue
@@ -143,15 +145,21 @@ defmodule Bonfire.Notify.MastoStreaming.EventFormatter do
     %{"id" => to_string(thread_id), "accounts" => [], "unread" => true, "last_status" => nil}
   end
 
-  defp conversation_accounts(nil), do: []
+  defp conversation_accounts(_last_status, nil, _opts), do: []
 
-  defp conversation_accounts(activity) do
-    case e(activity, :subject, nil) do
+  # the sender is the last status's account, already read through GraphQL with it
+  defp conversation_accounts(%{"account" => %{} = account}, _activity, _opts), do: [account]
+
+  # no status to take it from: the sender read by id, as the fetched conversation reads it
+  defp conversation_accounts(_last_status, activity, opts) do
+    case e(activity, :subject_id, nil) || Types.uid(e(activity, :subject, nil)) do
       nil ->
         []
 
-      subject ->
-        Mappers.Account.from_user(subject, skip_expensive_stats: true)
+      subject_id ->
+        Bonfire.API.MastoCompat.Accounts.by_ids([subject_id], opts[:current_user], counts: true)
+        |> Map.get(subject_id)
+        |> Mappers.Account.from_user()
         |> Helpers.deep_struct_to_map(filter_nils: true, drop_unknown_structs: true)
         |> List.wrap()
     end
