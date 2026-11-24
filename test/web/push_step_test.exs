@@ -27,6 +27,12 @@ defmodule Bonfire.Notify.PushStepTest do
   describe "on a page" do
     setup do
       configure_web_push()
+
+      # the checklist is a sidebar widget, and a flavour's dashboard has a sidebar only if it lists one
+      Process.put([:bonfire, Bonfire.Web.Views.DashboardLive, :widgets],
+        sidebar: [:getting_started]
+      )
+
       user = fake_user!()
       {:ok, view, _html} = live(conn(user: user, account: user.account), "/dashboard")
       {:ok, view: view}
