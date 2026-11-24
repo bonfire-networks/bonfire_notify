@@ -115,12 +115,17 @@ defmodule Bonfire.Notify.Web.MastoStreamingWebSocketTest do
       assert state.subscriptions == %{}
     end
 
+    # the shape Phoenix passes (`Phoenix.Socket.Transport.connect_info/4`)
     test "auth via Sec-WebSocket-Protocol header", %{token: token} do
       assert {:ok, state} =
                WS.connect(%{
                  params: %{},
                  connect_info: %{
-                   sec_websocket_headers: %{"sec-websocket-protocol" => token}
+                   sec_websocket_headers: [
+                     {"sec-websocket-version", "13"},
+                     {"sec-websocket-key", "dGhlIHNhbXBsZSBub25jZQ=="},
+                     {"sec-websocket-protocol", token}
+                   ]
                  },
                  options: []
                })
@@ -128,12 +133,27 @@ defmodule Bonfire.Notify.Web.MastoStreamingWebSocketTest do
       assert state.user
     end
 
-    test "auth via Authorization Bearer header", %{token: token} do
+    test "auth via the first of several Sec-WebSocket-Protocol values", %{token: token} do
       assert {:ok, state} =
                WS.connect(%{
                  params: %{},
                  connect_info: %{
-                   x_headers: [{"authorization", "Bearer #{token}"}]
+                   sec_websocket_headers: [{"sec-websocket-protocol", "#{token}, other"}]
+                 },
+                 options: []
+               })
+
+      assert state.user
+    end
+
+    test "an empty access_token param falls through to the Sec-WebSocket-Protocol header", %{
+      token: token
+    } do
+      assert {:ok, state} =
+               WS.connect(%{
+                 params: %{"access_token" => ""},
+                 connect_info: %{
+                   sec_websocket_headers: [{"sec-websocket-protocol", token}]
                  },
                  options: []
                })
@@ -147,23 +167,7 @@ defmodule Bonfire.Notify.Web.MastoStreamingWebSocketTest do
                WS.connect(%{
                  params: %{"access_token" => token},
                  connect_info: %{
-                   sec_websocket_headers: %{"sec-websocket-protocol" => "bogus"},
-                   x_headers: [{"authorization", "Bearer bogus"}]
-                 },
-                 options: []
-               })
-    end
-
-    test "Sec-WebSocket-Protocol takes priority over Bearer when no query param", %{
-      token: token
-    } do
-      # Sec-WebSocket-Protocol is valid, Bearer is invalid — should succeed
-      assert {:ok, _state} =
-               WS.connect(%{
-                 params: %{},
-                 connect_info: %{
-                   sec_websocket_headers: %{"sec-websocket-protocol" => token},
-                   x_headers: [{"authorization", "Bearer bogus"}]
+                   sec_websocket_headers: [{"sec-websocket-protocol", "bogus"}]
                  },
                  options: []
                })
@@ -183,8 +187,7 @@ defmodule Bonfire.Notify.Web.MastoStreamingWebSocketTest do
                WS.connect(%{
                  params: %{"access_token" => "invalid"},
                  connect_info: %{
-                   sec_websocket_headers: %{"sec-websocket-protocol" => "invalid"},
-                   x_headers: [{"authorization", "Bearer invalid"}]
+                   sec_websocket_headers: [{"sec-websocket-protocol", "invalid"}]
                  },
                  options: []
                })
@@ -222,6 +225,84 @@ defmodule Bonfire.Notify.Web.MastoStreamingWebSocketTest do
 
       assert state2.initial_stream == {"list", nil, "42"}
     end
+  end
+
+  # --- Upgrade through the endpoint, so connect_info comes from Phoenix, not a fixture ---
+
+  describe "WebSocket upgrade at /api/v1/streaming" do
+    @upgrade_headers [
+      {"connection", "upgrade"},
+      {"upgrade", "websocket"},
+      {"sec-websocket-version", "13"},
+      {"sec-websocket-key", "dGhlIHNhbXBsZSBub25jZQ=="}
+    ]
+
+    test "upgrades with the token in Sec-WebSocket-Protocol, as Ice Cubes sends it", %{
+      token: token
+    } do
+      conn = upgrade("/api/v1/streaming", [{"sec-websocket-protocol", token}])
+
+      refute conn.status == 403
+      assert [{:websocket, _}] = Plug.Test.sent_upgrades(conn)
+    end
+
+    test "echoes the offered subprotocol in the 101, as browsers require", %{token: token} do
+      conn = upgrade("/api/v1/streaming", [{"sec-websocket-protocol", token}])
+
+      assert [{:websocket, _}] = Plug.Test.sent_upgrades(conn)
+      assert Plug.Conn.get_resp_header(conn, "sec-websocket-protocol") == [token]
+    end
+
+    test "upgrades with the token in the access_token query param", %{token: token} do
+      conn = upgrade("/api/v1/streaming?access_token=#{token}", [])
+
+      refute conn.status == 403
+      assert [{:websocket, _}] = Plug.Test.sent_upgrades(conn)
+    end
+
+    test "refuses an upgrade without a token" do
+      conn = upgrade("/api/v1/streaming", [])
+
+      assert conn.status == 403
+      assert [] = Plug.Test.sent_upgrades(conn)
+    end
+
+    test "echoes no subprotocol when none was offered", %{token: token} do
+      conn = upgrade("/api/v1/streaming?access_token=#{token}", [])
+
+      assert [{:websocket, _}] = Plug.Test.sent_upgrades(conn)
+      assert Plug.Conn.get_resp_header(conn, "sec-websocket-protocol") == []
+    end
+
+    test "refuses a blank Sec-WebSocket-Protocol with a 403, not a crash" do
+      for blank <- ["", ","] do
+        conn = upgrade("/api/v1/streaming", [{"sec-websocket-protocol", blank}])
+
+        assert conn.status == 403
+        assert Plug.Conn.get_resp_header(conn, "sec-websocket-protocol") == []
+      end
+    end
+
+    # proxies and error reporters may record response headers
+    test "a refused upgrade does not echo the offered token" do
+      conn = upgrade("/api/v1/streaming", [{"sec-websocket-protocol", "not-a-token"}])
+
+      assert conn.status == 403
+      assert Plug.Conn.get_resp_header(conn, "sec-websocket-protocol") == []
+    end
+  end
+
+  defp upgrade(path, headers) do
+    conn = Phoenix.ConnTest.build_conn(:get, path)
+
+    # the upgrade validation (RFC 6455) needs a "host" request header, which `put_req_header/3` refuses to set
+    conn = %{conn | req_headers: [{"host", "localhost"} | conn.req_headers]}
+
+    (headers ++ @upgrade_headers)
+    |> Enum.reduce(conn, fn {name, value}, conn ->
+      Plug.Conn.put_req_header(conn, name, value)
+    end)
+    |> Bonfire.Web.Endpoint.call(Bonfire.Web.Endpoint.init([]))
   end
 
   # --- Init tests ---

@@ -14,8 +14,7 @@ defmodule Bonfire.Notify.Web.MastoStreamingWebSocket do
   ## Auth methods (in priority order)
 
   1. `access_token` query param (legacy)
-  2. `Sec-WebSocket-Protocol` header (recommended by many clients)
-  3. `Authorization: Bearer` header
+  2. `Sec-WebSocket-Protocol` header (Ice Cubes and other clients send the raw token as the subprotocol)
 
   ## Supported stream types
 
@@ -250,39 +249,23 @@ defmodule Bonfire.Notify.Web.MastoStreamingWebSocket do
   # --- Private helpers ---
 
   defp resolve_token(params, transport_info) do
-    # Token resolution order (first non-nil wins):
-    # 1. access_token query param (legacy)
-    # 2. Sec-WebSocket-Protocol header value (used by many Mastodon clients)
-    # 3. Authorization: Bearer header
-    params["access_token"] ||
-      extract_sec_websocket_protocol_token(transport_info) ||
-      extract_bearer_token(transport_info)
+    # no `Authorization: Bearer`: Phoenix passes only "x-" headers to connect/1
+    case params["access_token"] do
+      token when is_binary(token) and token != "" -> token
+      _ -> extract_sec_websocket_protocol_token(transport_info)
+    end
   end
 
-  defp extract_sec_websocket_protocol_token(%{connect_info: connect_info}) do
-    case get_in(connect_info, [:sec_websocket_headers, "sec-websocket-protocol"]) do
+  # the first value of the comma list, as `Phoenix.Transports.WebSocket` reads its own token
+  defp extract_sec_websocket_protocol_token(%{connect_info: %{sec_websocket_headers: headers}})
+       when is_list(headers) do
+    case List.keyfind(headers, "sec-websocket-protocol", 0) do
+      {_, value} -> value |> Plug.Conn.Utils.list() |> List.first()
       nil -> nil
-      "" -> nil
-      token when is_binary(token) -> token
     end
-  rescue
-    _ -> nil
   end
 
   defp extract_sec_websocket_protocol_token(_), do: nil
-
-  defp extract_bearer_token(%{connect_info: connect_info}) do
-    headers = connect_info[:x_headers] || []
-
-    Enum.find_value(headers, fn
-      {"authorization", "Bearer " <> token} -> token
-      _ -> nil
-    end)
-  rescue
-    _ -> nil
-  end
-
-  defp extract_bearer_token(_), do: nil
 
   defp validate_token(nil), do: :error
   defp validate_token(""), do: :error
