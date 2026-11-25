@@ -157,6 +157,40 @@ defmodule Bonfire.Notify.ContentTest do
     end
   end
 
+  # a like on a message never shows in the notifications feed (which leaves messages out), so its push has to open the conversation, as the message's own push does
+  test "a like on a direct message pushes to its discussion page, not the notifications", %{
+    alice: alice
+  } do
+    bob = fake_user!()
+
+    assert {:ok, message} =
+             Bonfire.Messages.send(alice, %{post_content: %{html_body: "a word"}}, [bob])
+
+    assert {:ok, like} = Bonfire.Social.Likes.like(bob, message)
+
+    for activity <- [activity_of(like), activity_in_memory(like)] do
+      assert Content.for_delivery(activity).content.url == "/discussion/#{message.id}"
+    end
+  end
+
+  test "a like on a direct message that answers another opens it in its thread", %{alice: alice} do
+    bob = fake_user!()
+
+    {:ok, op} = Bonfire.Messages.send(alice, %{post_content: %{html_body: "kickoff"}}, [bob])
+
+    {:ok, answer} =
+      Bonfire.Messages.send(bob, %{post_content: %{html_body: "ack"}, reply_to_id: op.id}, [
+        alice
+      ])
+
+    assert {:ok, like} = Bonfire.Social.Likes.like(alice, answer)
+
+    for activity <- [activity_of(like), activity_in_memory(like)] do
+      assert Content.for_delivery(activity).content.url ==
+               "/discussion/#{op.id}/reply/1/#{answer.id}"
+    end
+  end
+
   describe "a follow" do
     # what is followed is the reader, so there is nothing of theirs to quote: what tells them something is who is following them
     setup %{alice: alice} do

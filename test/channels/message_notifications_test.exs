@@ -102,6 +102,20 @@ defmodule Bonfire.Notify.MessageNotificationsTest do
       assert inspect(payload) =~ "liked"
     end
 
+    # a like on a message is not in the notifications feed, which leaves messages out, so the push is the only way to it
+    test "a like on a message is pushed, opening the message's discussion", %{
+      bob: bob,
+      alice: alice
+    } do
+      message = message(bob, alice, "a word for alice")
+
+      {:ok, _} = Bonfire.Social.Likes.like(alice, message)
+      run_queue()
+
+      assert_receive {:web_push_sent, _subscription, payload, _opts}
+      assert Jason.decode!(payload)["data"]["url"] == "/discussion/#{message.id}"
+    end
+
     test "switching Other's Push off leaves messages pushed", %{bob: bob, alice: alice} do
       bob = set(bob, [:notifications, :push, :other], false)
 
